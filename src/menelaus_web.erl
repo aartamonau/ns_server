@@ -287,11 +287,11 @@ loop(Req, AppRoot, DocRoot) ->
                              ["controller", "setFastWarmup"] ->
                                  {auth, fun handle_set_fast_warmup/1};
                              ["pools", PoolId, "buckets", Id] ->
-                                 {auth_bucket, fun menelaus_web_buckets:handle_bucket_update/3,
+                                 {auth_check_bucket_uuid, fun menelaus_web_buckets:handle_bucket_update/3,
                                   [PoolId, Id]};
                              ["pools", PoolId, "buckets"] ->
-                                 {auth_check_bucket_uuid,
-                                  fun menelaus_web_buckets:handle_bucket_create/2, [PoolId]};
+                                 {auth, fun menelaus_web_buckets:handle_bucket_create/2,
+                                  [PoolId]};
                              ["pools", PoolId, "buckets", Id, "controller", "doFlush"] ->
                                  {auth_check_bucket_uuid,
                                   fun menelaus_web_buckets:handle_bucket_flush/3, [PoolId, Id]};
