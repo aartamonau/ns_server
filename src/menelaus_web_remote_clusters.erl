@@ -20,6 +20,7 @@
 
 -include("menelaus_web.hrl").
 -include("ns_common.hrl").
+-include("remote_clusters_info.hrl").
 
 -export([get_remote_clusters/0,
          get_remote_clusters/1,
@@ -58,7 +59,8 @@ build_remote_cluster_info(KV) ->
               {uri, URI},
               {validateURI, iolist_to_binary([URI, <<"?just_validate=1">>])},
               {hostname, list_to_binary(misc:expect_prop_value(hostname, KV))},
-              {username, list_to_binary(misc:expect_prop_value(username, KV))}]}.
+              {username, list_to_binary(misc:expect_prop_value(username, KV))},
+              {uuid, misc:expect_prop_value(uuid, KV)}]}.
 
 handle_remote_clusters(Req) ->
     RemoteClusters = get_remote_clusters(),
@@ -76,15 +78,25 @@ do_handle_remote_clusters_post(Req, Params, JustValidate, TriesLeft) ->
     ExistingClusters = get_remote_clusters(),
     case validate_remote_cluster_params(Params, ExistingClusters) of
         {ok, KVList} ->
-            case JustValidate of
-                undefined ->
-                    NewClusters = [KVList | ExistingClusters],
-                    case cas_remote_clusters(ExistingClusters, NewClusters) of
-                        ok -> menelaus_util:reply_json(Req, build_remote_cluster_info(KVList));
-                        _ -> do_handle_remote_clusters_post(Req, Params, JustValidate, TriesLeft-1)
+            case validate_remote_cluster(KVList) of
+                {ok, FinalKVList} ->
+                    case JustValidate of
+                        undefined ->
+                            NewClusters = [FinalKVList | ExistingClusters],
+
+                            case cas_remote_clusters(ExistingClusters, NewClusters) of
+                                ok ->
+                                    menelaus_util:reply_json(Req,
+                                                             build_remote_cluster_info(FinalKVList));
+                                _ ->
+                                    do_handle_remote_clusters_post(Req, Params,
+                                                                   JustValidate, TriesLeft-1)
+                            end;
+                        _ ->
+                            menelaus_util:reply_json(Req, [])
                     end;
-                _ ->
-                    menelaus_util:reply_json(Req, [])
+                {errors, Status, Errors} ->
+                    menelaus_util:reply_json(Req, Errors, Status)
             end;
         {errors, Errors} ->
             menelaus_util:reply_json(Req, Errors, 400)
@@ -190,18 +202,42 @@ do_handle_remote_cluster_update(Id, Req, Params, JustValidate, TriesLeft) ->
 do_handle_remote_cluster_update_found_this(Id, Req, Params, JustValidate, OtherClusters, ExistingClusters, TriesLeft) ->
     case validate_remote_cluster_params(Params, OtherClusters) of
         {ok, KVList} ->
-            case JustValidate of
-                undefined ->
-                    NewClusters = [KVList | OtherClusters],
-                    case cas_remote_clusters(ExistingClusters, NewClusters) of
-                        ok -> menelaus_util:reply_json(Req, build_remote_cluster_info(KVList));
-                        _ -> do_handle_remote_cluster_update(Id, Req, Params, JustValidate, TriesLeft-1)
+            case validate_remote_cluster(KVList) of
+                {ok, FinalKVList} ->
+                    case JustValidate of
+                        undefined ->
+                            NewClusters = [FinalKVList | OtherClusters],
+
+                            case cas_remote_clusters(ExistingClusters, NewClusters) of
+                                ok ->
+                                    menelaus_util:reply_json(
+                                      Req, build_remote_cluster_info(FinalKVList));
+                                _ ->
+                                    do_handle_remote_cluster_update(Id, Req, Params,
+                                                                    JustValidate, TriesLeft-1)
+                            end;
+                        _ ->
+                            menelaus_util:reply_json(Req, [])
                     end;
-                _ ->
-                    menelaus_util:reply_json(Req, [])
+                {errors, Status, Errors} ->
+                    menelaus_util:reply_json(Req, Errors, Status)
             end;
         {errors, Errors} ->
             menelaus_util:reply_json(Req, Errors, 400)
+    end.
+
+%% actually go to remote cluster to verify it; returns updated cluster
+%% proplist with uuid being added;
+validate_remote_cluster(Cluster) ->
+    case remote_clusters_info:get_remote_cluster(Cluster) of
+        {ok, #remote_cluster{uuid=UUID}} ->
+            {ok, [{uuid, UUID} | lists:keydelete(uuid, 1, Cluster)]};
+        {error, rest_error, Msg, _} ->
+            Errors = [{<<"_">>, Msg}],
+            {errors, 400, Errors};
+        {error, _, _} ->
+            Errors = [{<<"_">>, <<"Unexpected error occurred. See logs for details.">>}],
+            {errors, 500, Errors}
     end.
 
 handle_remote_cluster_delete(Id, Req) ->
