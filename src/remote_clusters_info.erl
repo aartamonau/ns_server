@@ -24,9 +24,10 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          code_change/3, terminate/2]).
 
-%% -compile(export_all).
+-compile(export_all).
 
 -include("ns_common.hrl").
+-include("remote_clusters_info.hrl").
 
 -define(REMOTE_INFO_REQ_TIMEOUT,
         ns_config_ets_dup:get_timeout(remote_info_req_timeout, 5000)).
@@ -37,20 +38,24 @@
 -record(state, {remotes_file_cache :: string(),
                 vbmaps_file_cache :: string()}).
 
--record(remote_node, {host :: string(),
-                      port :: integer()}).
-
--record(remote_cluster, {uuid :: binary(),
-                         nodes :: [#remote_node{}]}).
-
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 %% get_remote_cluster(Cluster) ->
 %%     get_remote_cluster(Cluster, false).
 
+%% get_remote_cluster_by_name(_ClusterName) ->
+%%     do_something.
+
 get_remote_cluster(Cluster) ->
     gen_server:call(?MODULE, {get_remote_cluster, Cluster}).
+
+%% get_remote_vbucket_map(Cluster, Bucket) ->
+%%     gen_server:call(?MODULE, {get_remote_vbucket_map, Cluster, Bucket}).
+
+%% get_remote_vbucket_map(Reference) ->
+%%     {ok, {ClusterName, Bucket}} = parse_remote_bucket_reference(Reference),
+%%     gen_server:call(?MODULE, {get_remote_vbucket_map, ClusterName, Bucket}).
 
 %% get_remote_vbucket_map(Remote) ->
 %%     gen_server:call(?MODULE, {get_remote_vbucket_map, Remote}, infinity).
@@ -70,16 +75,23 @@ handle_call({get_remote_cluster, Cluster}, From, State) ->
     proc_lib:spawn_link(
       fun () ->
               R = remote_cluster(Cluster),
-              gen_server:reply(From, R),
+              gen_server:reply(From, R)%% ,
 
-              case R of
-                  {ok, RemoteCluster} ->
-                      gen_server:cast(?MODULE,
-                                      {cache_remote_cluster,
-                                       Cluster, RemoteCluster});
-                  _ ->
-                      ok
-              end
+              %% case R of
+              %%     {ok, RemoteCluster} ->
+              %%         gen_server:cast(?MODULE,
+              %%                         {cache_remote_cluster,
+              %%                          Cluster, RemoteCluster});
+              %%     _ ->
+              %%         ok
+              %% end
+      end),
+    {noreply, State};
+handle_call({get_remote_vbucket_map, Cluster, Bucket}, From, State) ->
+    proc_lib:spawn_link(
+      fun () ->
+              R = remote_vbmap(Cluster, Bucket),
+              gen_server:reply(From, R)
       end),
     {noreply, State};
 handle_call(Request, From, State) ->
@@ -413,7 +425,20 @@ host_and_port(Hostname) ->
             end
     end.
 
-remote_vbmap(Host, Port, UUID, Bucket, Username, Password) ->
+remote_vbmap(Cluster, BucketStr) ->
+    Username = proplists:get_value(username, Cluster),
+    Password = proplists:get_value(password, Cluster),
+    Hostname = proplists:get_value(hostname, Cluster),
+    UUID = proplists:get_value(uuid, Cluster),
+
+    true = (Username =/= undefined),
+    true = (Password =/= undefined),
+    true = (Hostname =/= undefined),
+
+    {Host, Port} = host_and_port(Hostname),
+
+    Bucket = list_to_binary(BucketStr),
+
     JsonGet = mk_json_get(Host, Port, Username, Password),
 
     with_pools(
@@ -623,7 +648,25 @@ mk_json_get(Host, Port, Username, Password) ->
                     K(Value);
                 Error ->
                     ?log_error("Request to http://~s:~s@~s:~b~s failed:~n~p",
-                               [Username, Password, Host, Port, Path, Error]),
+                               [mochiweb_util:quote_plus(Username),
+                                mochiweb_util:quote_plus(Password),
+                                Host, Port, Path, Error]),
                     Error
             end
+    end.
+
+remote_bucket_reference(ClusterName, BucketName) ->
+    iolist_to_binary(
+      [<<"/remoteClusters/">>,
+       mochiweb_util:quote_plus(ClusterName),
+       <<"/buckets/">>,
+       mochiweb_util:quote_plus(BucketName)]).
+
+parse_remote_bucket_reference(Reference) ->
+    case binary:split(Reference, $/, [global]) of
+        [<<>>, <<"remoteClusters">>, ClusterName, <<"buckets">>, BucketName] ->
+            {ok, {mochiweb_util:unquote(ClusterName),
+                  mochiweb_util:unquote(BucketName)}};
+        _ ->
+            {error, bad_reference}
     end.
