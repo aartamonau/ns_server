@@ -18,7 +18,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, get_remote_cluster/1]).
+-export([start_link/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -41,24 +41,12 @@
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
-%% get_remote_cluster(Cluster) ->
-%%     get_remote_cluster(Cluster, false).
-
-%% get_remote_cluster_by_name(_ClusterName) ->
-%%     do_something.
-
 get_remote_cluster(Cluster) ->
     gen_server:call(?MODULE, {get_remote_cluster, Cluster}).
 
-%% get_remote_vbucket_map(Cluster, Bucket) ->
-%%     gen_server:call(?MODULE, {get_remote_vbucket_map, Cluster, Bucket}).
-
-%% get_remote_vbucket_map(Reference) ->
-%%     {ok, {ClusterName, Bucket}} = parse_remote_bucket_reference(Reference),
-%%     gen_server:call(?MODULE, {get_remote_vbucket_map, ClusterName, Bucket}).
-
-%% get_remote_vbucket_map(Remote) ->
-%%     gen_server:call(?MODULE, {get_remote_vbucket_map, Remote}, infinity).
+get_remote_cluster_vbucket_map(ClusterName, Bucket) ->
+    Cluster = find_cluster_by_name(ClusterName),
+    gen_server:call(?MODULE, {get_remote_vbucket_map, Cluster, Bucket}).
 
 %% gen_server callbacks
 init([]) ->
@@ -90,7 +78,12 @@ handle_call({get_remote_cluster, Cluster}, From, State) ->
 handle_call({get_remote_vbucket_map, Cluster, Bucket}, From, State) ->
     proc_lib:spawn_link(
       fun () ->
-              R = remote_vbmap(Cluster, Bucket),
+              R = case remote_vbmap(Cluster, Bucket) of
+                      {ok, {_Nodes, VBucketMap}} ->
+                          {ok, VBucketMap};
+                      Error ->
+                          Error
+                  end,
               gen_server:reply(From, R)
       end),
     {noreply, State};
@@ -515,8 +508,9 @@ remote_vbmap_with_server_map(ServerMap, UUID, RemoteNodes, McdToCouchDict) ->
                       expect_nested_array(
                         <<"vBucketMap">>, ServerMap, <<"vbucket server map">>,
                         fun (VBucketMap) ->
-                                {RemoteNodes,
-                                 build_vbmap(VBucketMap, UUID, IxToCouchDict)}
+                                {ok,
+                                 {RemoteNodes,
+                                  build_vbmap(VBucketMap, UUID, IxToCouchDict)}}
                         end);
                   Error ->
                       Error
@@ -669,4 +663,22 @@ parse_remote_bucket_reference(Reference) ->
                   mochiweb_util:unquote(BucketName)}};
         _ ->
             {error, bad_reference}
+    end.
+
+find_cluster_by_name(ClusterName) ->
+    Config = ns_config:get(),
+    Clusters = ns_config:search(Config, remote_clusters, []),
+
+    case lists:dropwhile(Clusters,
+                         fun (Cluster) ->
+                                 Name = proplists:get_value(name, Cluster),
+                                 true = (Name =/= undefined),
+
+                                 Name =/= ClusterName
+                         end) of
+        [] ->
+            {error, cluster_not_found,
+             <<"Requested cluster not found">>};
+        [Cluster | _] ->
+            Cluster
     end.

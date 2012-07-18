@@ -235,7 +235,7 @@ validate_remote_cluster(Cluster) ->
         {error, rest_error, Msg, _} ->
             Errors = [{<<"_">>, Msg}],
             {errors, 400, Errors};
-        {error, _, _} ->
+        _ ->
             Errors = [{<<"_">>, <<"Unexpected error occurred. See logs for details.">>}],
             {errors, 500, Errors}
     end.
