@@ -37,7 +37,7 @@ do_db_req(#httpd{path_parts=[<<"_replicator">>|_]}=Req, Fun) ->
     %% TODO: AUTH!!!!
     couch_db_frontend:do_db_req(Req, Fun);
 do_db_req(#httpd{mochi_req=MochiReq, user_ctx=UserCtx,
-                 path_parts=[DbName|_] = PathParts} = Req, Fun) ->
+                 path_parts=[DbName|_]} = Req, Fun) ->
     % check auth here
     [BucketName|AfterSlash] = binary:split(DbName,<<"/">>),
     ListBucketName = ?b2l(BucketName),
@@ -54,35 +54,29 @@ do_db_req(#httpd{mochi_req=MochiReq, user_ctx=UserCtx,
                         true ->
                             %% undefined #db fields indicate bucket database
                             Db = #db{user_ctx = UserCtx, name = DbName},
-
-                            case PathParts of
-                                %% we want view executaion to have as view
-                                %% overhead as it's possible
-                                [_, <<"_design">>, _, <<"_view">>, _ | _] ->
-                                    ok;
-                                _ ->
-                                    UUID0 = couch_httpd:qs_value(Req, "bucket_uuid"),
-                                    case UUID0 of
-                                        undefined ->
-                                            ok;
-                                        _ ->
-                                            UUID = list_to_binary(UUID0),
-                                            BucketUUID = proplists:get_value(uuid, BucketConfig),
-                                            case BucketUUID =:= undefined orelse
-                                                BucketUUID =:= UUID of
-                                                true ->
-                                                    proceed;
-                                                false ->
-                                                    erlang:throw({not_found, uuids_dont_match})
-                                            end
-                                    end
-                            end,
-
                             Fun(Req, Db);
                         _ ->
                             erlang:throw({not_found, no_couchbase_bucket_exists})
                     end;
                 false ->
+                    %% xdcr replicates here; to prevent a replication to
+                    %% recreated bucket (without refetching vbucket map) or
+                    %% even to new cluster we encode a bucket uuid in the url
+                    %% and check it here;
+                    case binary:split(DbName, <<";">>) of
+                        [_, UUID] ->
+                            BucketUUID = proplists:get_value(uuid, BucketConfig),
+                            case BucketUUID =:= undefined orelse
+                                BucketUUID =:= UUID of
+                                true ->
+                                    ok;
+                                false ->
+                                    erlang:throw({not_found, uuids_dont_match})
+                            end;
+                        _ ->
+                            ok
+                    end,
+
                     couch_db_frontend:do_db_req(Req, Fun)
             end;
         _Else ->
