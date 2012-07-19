@@ -565,7 +565,7 @@ do_build_vbmap_chain([NodeIxRaw | Rest], UUID, IxToCouchDict, VBucket, R) ->
                               {error, bad_value, iolist_to_binary(Msg)};
                           {ok, URL} ->
                               VBucketURL0 = [URL, "%2f", integer_to_list(VBucket),
-                                             "?bucket_uuid=", UUID],
+                                             "%3b", UUID],
                               VBucketURL = iolist_to_binary(VBucketURL0),
                               do_build_vbmap_chain(Rest, UUID, IxToCouchDict,
                                                    VBucket, [VBucketURL | R])
