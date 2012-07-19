@@ -44,7 +44,11 @@ start_link() ->
 get_remote_cluster(Cluster) ->
     gen_server:call(?MODULE, {get_remote_cluster, Cluster}).
 
-get_remote_cluster_vbucket_map(ClusterName, Bucket) ->
+get_remote_vbucket_map(Reference) ->
+    {ok, {ClusterName, BucketName}} = parse_remote_bucket_reference(Reference),
+    get_remote_vbucket_map(ClusterName, BucketName).
+
+get_remote_vbucket_map(ClusterName, Bucket) ->
     Cluster = find_cluster_by_name(ClusterName),
     gen_server:call(?MODULE, {get_remote_vbucket_map, Cluster, Bucket}).
 
@@ -279,7 +283,7 @@ with_buckets(PoolDetails, JsonGet, K) ->
       end).
 
 with_bucket([], BucketName, _K) ->
-    Msg = io_lib:format("Bucket ~s not found.", [BucketName]),
+    Msg = io_lib:format("Bucket `~s` not found.", [BucketName]),
     {error, not_present, iolist_to_binary(Msg)};
 with_bucket([Bucket | Rest], BucketName, K) ->
     expect_object(
@@ -428,6 +432,7 @@ remote_vbmap(Cluster, BucketStr) ->
     true = (Password =/= undefined),
     true = (Hostname =/= undefined),
 
+    Creds = {Username, Password},
     {Host, Port} = host_and_port(Hostname),
 
     Bucket = list_to_binary(BucketStr),
@@ -443,7 +448,8 @@ remote_vbmap(Cluster, BucketStr) ->
                         Pools, JsonGet,
                         fun (PoolDetails) ->
                                 remote_vbmap_with_pool_details(PoolDetails,
-                                                               Bucket, JsonGet)
+                                                               Bucket,
+                                                               Creds, JsonGet)
 
                         end);
                   false ->
@@ -455,7 +461,7 @@ remote_vbmap(Cluster, BucketStr) ->
               end
       end).
 
-remote_vbmap_with_pool_details(PoolDetails, Bucket, JsonGet) ->
+remote_vbmap_with_pool_details(PoolDetails, Bucket, Creds, JsonGet) ->
     with_nodes(
       PoolDetails, <<"default pool details">>,
       [{<<"hostname">>, fun extract_string/2}],
@@ -475,20 +481,21 @@ remote_vbmap_with_pool_details(PoolDetails, Bucket, JsonGet) ->
                                             remote_vbmap_with_bucket(BucketObject,
                                                                      UUID,
                                                                      PoolNodeProps,
-                                                                     BucketNodeProps)
+                                                                     BucketNodeProps,
+                                                                     Creds)
                                     end)
                           end)
                 end)
       end).
 
-remote_vbmap_with_bucket(BucketObject, UUID, PoolNodeProps, BucketNodeProps) ->
+remote_vbmap_with_bucket(BucketObject, UUID, PoolNodeProps, BucketNodeProps, Creds) ->
     PoolNodes = lists:map(fun props_to_remote_node/1, PoolNodeProps),
     BucketNodes = lists:map(fun props_to_remote_node/1, BucketNodeProps),
 
     RemoteNodes = lists:usort(PoolNodes ++ BucketNodes),
 
     with_mcd_to_couch_uri_dict(
-      BucketNodeProps,
+      BucketNodeProps, Creds,
       fun (McdToCouchDict) ->
               expect_nested_object(
                 <<"vBucketServerMap">>, BucketObject, <<"bucket details">>,
@@ -585,22 +592,23 @@ do_build_ix_to_couch_uri_dict([S | Rest], McdToCouchDict, Ix, D) ->
             do_build_ix_to_couch_uri_dict(Rest, McdToCouchDict, Ix + 1, D1)
     end.
 
-with_mcd_to_couch_uri_dict(NodeProps, K) ->
-    do_with_mcd_to_couch_uri_dict(NodeProps, dict:new(), K).
+with_mcd_to_couch_uri_dict(NodeProps, Creds, K) ->
+    do_with_mcd_to_couch_uri_dict(NodeProps, dict:new(), Creds, K).
 
-do_with_mcd_to_couch_uri_dict([], Dict, K) ->
+do_with_mcd_to_couch_uri_dict([], Dict, _Creds, K) ->
     K(Dict);
-do_with_mcd_to_couch_uri_dict([Props | Rest], Dict, K) ->
+do_with_mcd_to_couch_uri_dict([Props | Rest], Dict, Creds, K) ->
     Hostname = proplists:get_value(<<"hostname">>, Props),
-    CouchApiBase = proplists:get_value(<<"couchApiBase">>, Props),
+    CouchApiBase0 = proplists:get_value(<<"couchApiBase">>, Props),
     Ports = proplists:get_value(<<"ports">>, Props),
 
     %% this is ensured by `extract_node_props' function
     true = (Hostname =/= undefined),
-    true = (CouchApiBase =/= undefined),
+    true = (CouchApiBase0 =/= undefined),
     true = (Ports =/= undefined),
 
     {Host, _Port} = host_and_port(Hostname),
+    CouchApiBase = add_credentials(CouchApiBase0, Creds),
 
     expect_nested_number(
       <<"direct">>, Ports, <<"node ports object">>,
@@ -608,8 +616,16 @@ do_with_mcd_to_couch_uri_dict([Props | Rest], Dict, K) ->
               McdUri = iolist_to_binary([Host, $:, integer_to_list(DirectPort)]),
               NewDict = dict:store(McdUri, CouchApiBase, Dict),
 
-              do_with_mcd_to_couch_uri_dict(Rest, NewDict, K)
+              do_with_mcd_to_couch_uri_dict(Rest, NewDict, Creds, K)
       end).
+
+add_credentials(URLBinary, {Username, Password}) ->
+    URL = binary_to_list(URLBinary),
+    {Scheme, Netloc, Path, Query, Fragment} = mochiweb_util:urlsplit(URL),
+    Netloc1 = mochiweb_util:quote_plus(Username) ++ ":" ++
+        mochiweb_util:quote_plus(Password) ++ "@" ++ Netloc,
+    URL1 = mochiweb_util:urlunsplit({Scheme, Netloc1, Path, Query, Fragment}),
+    list_to_binary(URL1).
 
 with_server_list(VBucketServerMap, K) ->
     expect_nested_array(
@@ -637,9 +653,20 @@ mk_json_get(Host, Port, Username, Password) ->
             R = menelaus_rest:json_request_hilevel(get,
                                                    {Host, Port, Path},
                                                    {Username, Password}),
+
             case R of
                 {ok, Value} ->
                     K(Value);
+                {client_error, Body} ->
+                    ?log_error("Request to http://~s:~s@~s:~b~s returned "
+                               "400 status code:~n~p",
+                               [mochiweb_util:quote_plus(Username),
+                                mochiweb_util:quote_plus(Password),
+                                Host, Port, Path, Body]),
+
+                    %% convert it to the same form as all other errors
+                    {error, client_error,
+                     <<"Remote cluster returned 400 status code unexpectedly">>};
                 Error ->
                     ?log_error("Request to http://~s:~s@~s:~b~s failed:~n~p",
                                [mochiweb_util:quote_plus(Username),
@@ -657,7 +684,7 @@ remote_bucket_reference(ClusterName, BucketName) ->
        mochiweb_util:quote_plus(BucketName)]).
 
 parse_remote_bucket_reference(Reference) ->
-    case binary:split(Reference, $/, [global]) of
+    case binary:split(Reference, <<"/">>, [global]) of
         [<<>>, <<"remoteClusters">>, ClusterName, <<"buckets">>, BucketName] ->
             {ok, {mochiweb_util:unquote(ClusterName),
                   mochiweb_util:unquote(BucketName)}};
@@ -669,13 +696,12 @@ find_cluster_by_name(ClusterName) ->
     Config = ns_config:get(),
     Clusters = ns_config:search(Config, remote_clusters, []),
 
-    case lists:dropwhile(Clusters,
-                         fun (Cluster) ->
+    case lists:dropwhile(fun (Cluster) ->
                                  Name = proplists:get_value(name, Cluster),
                                  true = (Name =/= undefined),
 
                                  Name =/= ClusterName
-                         end) of
+                         end, Clusters) of
         [] ->
             {error, cluster_not_found,
              <<"Requested cluster not found">>};

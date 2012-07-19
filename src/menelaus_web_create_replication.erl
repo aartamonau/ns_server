@@ -97,9 +97,14 @@ check_from_bucket(FromBucket, Buckets) ->
                 membase ->
                     [];
                 X ->
-                    [{<<"fromBucket">>, list_to_binary("cannot replicate from this bucket type: " ++ atom_to_list(X))}]
+                    [{<<"fromBucket">>,
+                      list_to_binary("cannot replicate from this bucket type: " ++ atom_to_list(X))}]
             end
     end.
+
+%% check_bucket_uuid(BucketConfig, RemoteUUID) ->
+%%     %% can be undefined for old buckets
+%%     BucketUUID = proplists:get_value(uuid, BucketConfig),
 
 validate_new_replication_params_check_from_bucket(FromBucket, ToCluster, ToBucket,
                                                   ReplicationType, Buckets) ->
@@ -110,6 +115,13 @@ validate_new_replication_params_check_from_bucket(FromBucket, ToCluster, ToBucke
                 {ok, _VBucketMap} ->
                     {ok, build_replication_doc(FromBucket, ToCluster,
                                                ToBucket, ReplicationType)};
+                    %% case check_bucket_uuid(BucketConfig, UUID) of
+                    %%     ok ->
+                    %%         {ok, build_replication_doc(FromBucket, ToCluster,
+                    %%                                    ToBucket, ReplicationType)};
+                    %%     Errors ->
+                    %%         Errors
+                    %% end;
                 {error, Type, Msg} when Type =:= not_present;
                                         Type =:= not_capable ->
                     {error, [{<<"toBucket">>, Msg}]};
@@ -130,147 +142,9 @@ build_replication_doc(FromBucket, Cluster, ToBucket, ReplicationType) ->
 
     [{type, <<"xdc">>},
      {source, list_to_binary(FromBucket)},
-     {targetBucket, list_to_binary(ToBucket)},
+     %% {targetBucket, list_to_binary(ToBucket)},
      {target, Reference},
      {continuous, case ReplicationType of
                       continuous -> true;
                       _ -> false
                   end}].
-
-%% -spec throw_simple_json_get_error(binary(), iolist()) -> no_return().
-%% throw_simple_json_get_error(Field, Msg) ->
-%%     erlang:throw({json_get_error, {error, [{Field, iolist_to_binary(Msg)}]}}).
-
-%% -spec throw_simple_json_get_error(string()) -> no_return().
-%% throw_simple_json_get_error(Msg) ->
-%%     throw_simple_json_get_error(<<"_">>, Msg).
-
-%% json_get(Host, Port, Path, Username, Password) ->
-%%     case menelaus_rest:json_request_hilevel(get, {Host, Port, Path}, {Username, Password}) of
-%%         {ok, RV} ->
-%%             RV;
-%%         X ->
-%%             ?log_debug("json_get(~p, ~p, ~p, ~p, ~p) failed:~n~p", [Host, Port, Path, Username, Password, X]),
-%%             case X of
-%%                 {client_error, _} ->
-%%                     throw_simple_json_get_error(<<"remote cluster unexpectedly returned 400 status code">>);
-%%                 {error, rest_error, B, _Nested} ->
-%%                     throw_simple_json_get_error([<<"remote cluster access failed: ">>, B])
-%%             end
-%%     end.
-
-
-%% do_validate_new_replication_params_with_cluster(FromBucket, ToBucket, ReplicationType, ToClusterKV, JsonGet0) ->
-%%     UserName = proplists:get_value(username, ToClusterKV),
-%%     true = (UserName =/= undefined),
-%%     Password = proplists:get_value(password, ToClusterKV),
-%%     true = (Password =/= undefined),
-%%     Hostname0 = proplists:get_value(hostname, ToClusterKV),
-%%     true = (Hostname0 =/= undefined),
-%%     {Host, Port} = case re:run(Hostname0, <<"(.*):(.*)">>, [anchored, {capture, all_but_first, list}]) of
-%%                        nomatch ->
-%%                            {Hostname0, "8091"};
-%%                        {match, [_Host, _Port] = HPair} ->
-%%                            list_to_tuple(HPair)
-%%                    end,
-%%     JsonGet = fun (Path) ->
-%%                       JsonGet0(Host, Port, Path, UserName, Password)
-%%               end,
-%%     ?log_debug("Will use the following json_get params: ~p, ~p, ~p, ~p", [Host, Port, UserName, Password]),
-%%     {struct, Pools} = JsonGet("/pools"),
-%%     DefaultPoolPath = case proplists:get_value(<<"pools">>, Pools) of
-%%                           [] ->
-%%                               throw_simple_json_get_error(<<"pools request returned empty pools list">>);
-%%                           [{struct, KV} | _] ->
-%%                               case proplists:get_value(<<"uri">>, KV) of
-%%                                   undefined -> undefined;
-%%                                   URI -> binary_to_list(URI)
-%%                               end;
-%%                           _ -> undefined
-%%                       end,
-%%     case DefaultPoolPath of
-%%         undefined ->
-%%             throw_simple_json_get_error(<<"pools request returned invalid object">>);
-%%         _ -> ok
-%%     end,
-%%     {struct, PoolDetails} = JsonGet(DefaultPoolPath),
-%%     ?log_debug("Got pool details~n~p~n", [PoolDetails]),
-%%     BucketsURL = case proplists:get_value(<<"buckets">>, PoolDetails) of
-%%                      undefined ->
-%%                          throw_simple_json_get_error(<<"pool details request returned json without buckets field">>);
-%%                      {struct, BucketsField} ->
-%%                          case proplists:get_value(<<"uri">>, BucketsField) of
-%%                              undefined ->
-%%                                  throw_simple_json_get_error(<<"pool details request returned json with invalid buckets field">>);
-%%                              XBuckets ->
-%%                                  binary_to_list(XBuckets)
-%%                          end
-%%                  end,
-%%     BinToBucket = list_to_binary(ToBucket),
-%%     BucketsList = JsonGet(BucketsURL),
-
-%%     BucketPath = case [KV || {struct, KV} <- BucketsList,
-%%                              lists:keyfind(<<"name">>, 1, KV) =:= {<<"name">>, BinToBucket}] of
-%%                      [TargetBucket | _] ->
-%%                          case proplists:get_value(<<"uri">>, TargetBucket) of
-%%                              undefined ->
-%%                                  throw_simple_json_get_error(<<"buckets list request returned invalid json">>);
-%%                              X ->
-%%                                  binary_to_list(X)
-%%                          end;
-%%                      _ ->
-%%                          throw_simple_json_get_error(<<"toBucket">>,
-%%                                                      <<"target cluster doesn't have given bucket or authentication failed">>)
-%%                  end,
-
-%%     {struct, BucketDetails} = JsonGet(BucketPath),
-%%     MaybeErrors0 =
-%%         [case proplists:get_value(<<"bucketType">>, BucketDetails) of
-%%              <<"membase">> -> undefined;
-%%              XBucketType -> "target bucket has unsupported bucket type: " ++ binary_to_list(XBucketType)
-%%          end,
-%%          case proplists:get_value(<<"vBucketServerMap">>, BucketDetails) of
-%%              {struct, [_|_]} ->
-%%                  undefined;
-%%              _ ->
-%%                  "target bucket is missing vbucket map"
-%%          end,
-%%          case proplists:get_value(<<"nodes">>, BucketDetails) of
-%%              Nodes when is_list(Nodes) ->
-%%                  case [N || {struct, N} <- Nodes,
-%%                             case proplists:get_value(<<"couchApiBase">>, N) of
-%%                                 undefined -> true;
-%%                                 _ -> false
-%%                             end] of
-%%                      [] ->
-%%                          undefined;
-%%                      _ ->
-%%                          "not all nodes in target bucket have couch api url"
-%%                  end;
-%%              _ ->
-%%                  "target bucket is missing nodes list"
-%%          end],
-%%     MaybeErrors = lists:filter(fun (undefined) -> false;
-%%                                    (_) -> true
-%%                                end, MaybeErrors0),
-%%     case MaybeErrors of
-%%         [] ->
-%%             {ok, [{type, <<"xdc">>},
-%%                   {source, list_to_binary(FromBucket)},
-%%                   {targetBucket, BinToBucket},
-%%                   {target, iolist_to_binary([<<"http://">>,
-%%                                              mochiweb_util:quote_plus(UserName),
-%%                                              <<":">>,
-%%                                              mochiweb_util:quote_plus(Password),
-%%                                              <<"@">>,
-%%                                              Host,
-%%                                              <<":">>,
-%%                                              Port,
-%%                                              BucketPath])},
-%%                   {continuous, case ReplicationType of
-%%                                    continuous -> true;
-%%                                    _ -> false
-%%                                end}]};
-%%         _ ->
-%%             throw_simple_json_get_error(string:join(MaybeErrors, " and "))
-%%     end.
