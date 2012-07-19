@@ -415,31 +415,44 @@ sum_stats(#rep_stats{} = S1, #rep_stats{} = S2) ->
 get_checkpoint_log_id(#db{name = DbName0}, LogId0) ->
     get_checkpoint_log_id(?b2l(DbName0), LogId0);
 get_checkpoint_log_id(#httpdb{url = DbUrl0}, LogId0) ->
-    {_, _, DbName0, _, _} = mochiweb_util:urlsplit(DbUrl0),
+    [_, _, DbName0] = [couch_httpd:unquote(Token) ||
+                          Token <- string:tokens(DbUrl0, "/")],
     get_checkpoint_log_id(mochiweb_util:unquote(DbName0), LogId0);
 get_checkpoint_log_id(DbName0, LogId0) ->
-    {_, VBucket} = split_dbname(DbName0),
+    {DbName, _UUID} = split_uuid(DbName0),
+    {_, VBucket} = split_dbname(DbName),
     ?l2b([?LOCAL_DOC_PREFIX, integer_to_list(VBucket), "-", LogId0]).
 
 get_master_db(#db{name = DbName}) ->
     ?l2b(get_master_db(?b2l(DbName)));
 get_master_db(#httpdb{url=DbUrl0}) ->
-    {Scheme, Netloc, Path, Query, Fragment} = mochiweb_util:urlsplit(DbUrl0),
-    DbName = get_master_db(mochiweb_util:unquote(Path)),
+    [Scheme, Host, DbName0] = [couch_httpd:unquote(Token) ||
+                                  Token <- string:tokens(DbUrl0, "/")],
+    DbName = get_master_db(DbName0),
 
-    DbUrl = mochiweb_util:urlunsplit({Scheme, Netloc,
-                                      "/" ++ mochiweb_util:quote_plus(DbName),
-                                      Query, Fragment}),
+    DbUrl = Scheme ++ "//" ++ Host ++ "/" ++ couch_httpd:quote(DbName) ++ "/",
     #httpdb{url = DbUrl, timeout = 300000};
-get_master_db(DbName) ->
+get_master_db(DbName0) ->
+    {DbName, UUID} = split_uuid(DbName0),
     {Bucket, _} = split_dbname(DbName),
-    Bucket ++ "/master".
+    MasterDbName = Bucket ++ "/master",
+    unsplit_uuid({MasterDbName, UUID}).
 
 split_dbname(DbName) ->
-    Tokens = string:tokens(DbName, [$/]),
-    build_info(Tokens, []).
+    %% couchbase does not support slashes in bucket names; thus we can have only
+    %% two items in this list
+    [BucketName, VBucketStr] = string:tokens(DbName, [$/]),
+    {BucketName, list_to_integer(VBucketStr)}.
 
-build_info([VBucketStr], R) ->
-    {string:join(lists:reverse(R), "/"), list_to_integer(VBucketStr)};
-build_info([H|T], R)->
-    build_info(T, [H|R]).
+split_uuid(DbName) ->
+    case string:tokens(DbName, [$;]) of
+        [RealDbName, UUID] ->
+            {RealDbName, UUID};
+        _ ->
+            {DbName, undefined}
+    end.
+
+unsplit_uuid({DbName, undefined}) ->
+    DbName;
+unsplit_uuid({DbName, UUID}) ->
+    DbName ++ ";" ++ UUID.
