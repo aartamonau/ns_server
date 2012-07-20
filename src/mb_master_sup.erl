@@ -41,7 +41,9 @@ init([]) ->
 %% @private
 %% @doc The list of child specs.
 child_specs() ->
-    [{ns_orchestrator, {ns_orchestrator, start_link, []},
+    [{ns_online_config_upgrader, {ns_online_config_upgrader, start_link, []},
+      transient, 1000, worker, [ns_online_config_upgrader]},
+     {ns_orchestrator, {ns_orchestrator, start_link, []},
       permanent, 20, worker, [ns_orchestrator]},
      {cb_replication, {cb_replication, start_link, []},
       permanent, 1000, worker, [cb_replication]},
