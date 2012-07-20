@@ -48,14 +48,14 @@ start_link() ->
 fetch_remote_cluster(Cluster) ->
     gen_server:call(?MODULE, {fetch_remote_cluster, Cluster}, 60000).
 
-get_remote_vbucket_map(Reference, Through) ->
+get_remote_bucket(Reference, Through) ->
     {ok, {ClusterName, BucketName}} = parse_remote_bucket_reference(Reference),
-    get_remote_vbucket_map(ClusterName, BucketName, Through).
+    get_remote_bucket(ClusterName, BucketName, Through).
 
-get_remote_vbucket_map(ClusterName, Bucket, Through) ->
+get_remote_bucket(ClusterName, Bucket, Through) ->
     Cluster = find_cluster_by_name(ClusterName),
     gen_server:call(?MODULE,
-                    {get_remote_vbucket_map, Cluster, Bucket, Through}, 60000).
+                    {get_remote_bucket, Cluster, Bucket, Through}, 60000).
 
 %% gen_server callbacks
 init([]) ->
@@ -81,18 +81,17 @@ handle_call({fetch_remote_cluster, Cluster}, From, State) ->
               gen_server:reply(From, R)
       end),
     {noreply, State};
-handle_call({get_remote_vbucket_map, Cluster, Bucket, false}, From, State) ->
+handle_call({get_remote_bucket, Cluster, Bucket, false}, From, State) ->
     UUID = proplists:get_value(uuid, Cluster),
     true = (UUID =/= undefined),
 
-    case ets:lookup(?CACHE, {replication, UUID, Bucket}) of
+    case ets:lookup(?CACHE, {bucket, UUID, Bucket}) of
         [] ->
-            handle_call({get_remote_vbucket_map, Cluster, Bucket, true},
-                        From, State);
+            handle_call({get_remote_bucket, Cluster, Bucket, true}, From, State);
         [{_, Cached}] ->
             {reply, {ok, Cached}, State}
     end;
-handle_call({get_remote_vbucket_map, Cluster, Bucket, true}, From, State) ->
+handle_call({get_remote_bucket, Cluster, Bucket, true}, From, State) ->
     Username = proplists:get_value(username, Cluster),
     Password = proplists:get_value(password, Cluster),
     UUID = proplists:get_value(uuid, Cluster),
@@ -119,11 +118,11 @@ handle_call({get_remote_vbucket_map, Cluster, Bucket, true}, From, State) ->
 
               Reply =
                   case R of
-                      {ok, {NewRemoteCluster, VBucketMap}} ->
+                      {ok, {NewRemoteCluster, RemoteBucket}} ->
                           ?MODULE ! {cache_remote_cluster, UUID, NewRemoteCluster},
-                          ?MODULE ! {cache_remote_vbmap, {UUID, Bucket}, VBucketMap},
+                          ?MODULE ! {cache_remote_bucket, {UUID, Bucket}, RemoteBucket},
 
-                          {ok, VBucketMap};
+                          {ok, RemoteBucket};
                       Error ->
                           Error
                   end,
@@ -146,15 +145,15 @@ handle_info({cache_remote_cluster, UUID, RemoteCluster0}, State) ->
     NewClusters = ordsets:add_element(UUID, Clusters),
     true = ets:insert(?CACHE, {clusters, NewClusters}),
 
-    ets:insert_new(?CACHE, {{replications, UUID}, []}),
+    ets:insert_new(?CACHE, {{buckets, UUID}, []}),
     {noreply, State};
-handle_info({cache_remote_vbmap, {UUID, Bucket} = Id, RemoteVbmap0}, State) ->
-    [{_, Replications}] = ets:lookup(?CACHE, {replications, UUID}),
-    NewReplications = ordsets:add_element(Bucket, Replications),
-    true = ets:insert(?CACHE, {{replications, UUID}, NewReplications}),
+handle_info({cache_remote_bucket, {UUID, Bucket} = Id, RemoteBucket0}, State) ->
+    [{_, Buckets}] = ets:lookup(?CACHE, {buckets, UUID}),
+    NewBuckets = ordsets:add_element(Bucket, Buckets),
+    true = ets:insert(?CACHE, {{buckets, UUID}, NewBuckets}),
 
-    RemoteVbmap = last_cache_request(cache_remote_vbmap, Id, RemoteVbmap0),
-    true = ets:insert(?CACHE, {{replication, UUID, Bucket}, RemoteVbmap}),
+    RemoteBucket = last_cache_request(cache_remote_bucket, Id, RemoteBucket0),
+    true = ets:insert(?CACHE, {{bucket, UUID, Bucket}, RemoteBucket}),
 
     {noreply, State};
 handle_info(gc, #state{cache_path=CachePath} = State) ->
@@ -494,16 +493,17 @@ host_and_port(Hostname) ->
             end
     end.
 
-remote_cluster_vbmap(#remote_cluster{nodes=Nodes,
-                                     uuid=UUID}, BucketStr, Username, Password) ->
+remote_cluster_and_bucket(#remote_cluster{nodes=Nodes,
+                                          uuid=UUID},
+                          BucketStr, Username, Password) ->
     Bucket = list_to_binary(BucketStr),
 
     %% TODO
     Node = hd(Nodes),
-    remote_vbmap(Node, Bucket, Username, Password, UUID).
+    remote_bucket(Node, Bucket, Username, Password, UUID).
 
-remote_vbmap(#remote_node{host=Host, port=Port},
-             Bucket, Username, Password, UUID) ->
+remote_bucket(#remote_node{host=Host, port=Port},
+              Bucket, Username, Password, UUID) ->
     Creds = {Username, Password},
 
     JsonGet = mk_json_get(Host, Port, Username, Password),
@@ -516,10 +516,10 @@ remote_vbmap(#remote_node{host=Host, port=Port},
                       with_default_pool_details(
                         Pools, JsonGet,
                         fun (PoolDetails) ->
-                                remote_vbmap_with_pool_details(PoolDetails,
-                                                               UUID,
-                                                               Bucket,
-                                                               Creds, JsonGet)
+                                remote_bucket_with_pool_details(PoolDetails,
+                                                                UUID,
+                                                                Bucket,
+                                                                Creds, JsonGet)
 
                         end);
                   false ->
@@ -532,7 +532,7 @@ remote_vbmap(#remote_node{host=Host, port=Port},
               end
       end).
 
-remote_vbmap_with_pool_details(PoolDetails, UUID, Bucket, Creds, JsonGet) ->
+remote_bucket_with_pool_details(PoolDetails, UUID, Bucket, Creds, JsonGet) ->
     with_nodes(
       PoolDetails, <<"default pool details">>,
       [{<<"hostname">>, fun extract_string/2}],
@@ -549,19 +549,19 @@ remote_vbmap_with_pool_details(PoolDetails, UUID, Bucket, Creds, JsonGet) ->
                                      {<<"couchApiBase">>, fun extract_string/2},
                                      {<<"ports">>, fun extract_object/2}],
                                     fun (BucketNodeProps) ->
-                                            remote_vbmap_with_bucket(BucketObject,
-                                                                     UUID,
-                                                                     BucketUUID,
-                                                                     PoolNodeProps,
-                                                                     BucketNodeProps,
-                                                                     Creds)
+                                            remote_bucket_with_bucket(BucketObject,
+                                                                      UUID,
+                                                                      BucketUUID,
+                                                                      PoolNodeProps,
+                                                                      BucketNodeProps,
+                                                                      Creds)
                                     end)
                           end)
                 end)
       end).
 
-remote_vbmap_with_bucket(BucketObject, UUID,
-                         BucketUUID, PoolNodeProps, BucketNodeProps, Creds) ->
+remote_bucket_with_bucket(BucketObject, UUID,
+                          BucketUUID, PoolNodeProps, BucketNodeProps, Creds) ->
     PoolNodes = lists:map(fun props_to_remote_node/1, PoolNodeProps),
     BucketNodes = lists:map(fun props_to_remote_node/1, BucketNodeProps),
 
@@ -574,12 +574,12 @@ remote_vbmap_with_bucket(BucketObject, UUID,
               expect_nested_object(
                 <<"vBucketServerMap">>, BucketObject, <<"bucket details">>,
                 fun (VBucketServerMap) ->
-                        remote_vbmap_with_server_map(VBucketServerMap, BucketUUID,
-                                                     RemoteCluster, McdToCouchDict)
+                        remote_bucket_with_server_map(VBucketServerMap, BucketUUID,
+                                                      RemoteCluster, McdToCouchDict)
                 end)
       end).
 
-remote_vbmap_with_server_map(ServerMap, BucketUUID, RemoteCluster, McdToCouchDict) ->
+remote_bucket_with_server_map(ServerMap, BucketUUID, RemoteCluster, McdToCouchDict) ->
     with_server_list(
       ServerMap,
       fun (ServerList) ->
@@ -589,9 +589,13 @@ remote_vbmap_with_server_map(ServerMap, BucketUUID, RemoteCluster, McdToCouchDic
                       expect_nested_array(
                         <<"vBucketMap">>, ServerMap, <<"vbucket server map">>,
                         fun (VBucketMap) ->
-                                {ok,
-                                 {RemoteCluster,
-                                  build_vbmap(VBucketMap, BucketUUID, IxToCouchDict)}}
+                                VBucketMapDict =
+                                    build_vbmap(VBucketMap,
+                                                BucketUUID, IxToCouchDict),
+                                RemoteBucket = #remote_bucket{uuid=BucketUUID,
+                                                              vbucket_map=VBucketMapDict},
+
+                                {ok, {RemoteCluster, RemoteBucket}}
                         end);
                   Error ->
                       Error
@@ -817,9 +821,9 @@ get_cached_remote_clusters_ids() ->
     [{clusters, Clusters}] = ets:lookup(?CACHE, clusters),
     Clusters.
 
-get_cached_cluster_replications(ClusterId) ->
-    [{_, Buckets}] = ets:lookup(?CACHE, {replications, ClusterId}),
-    [{replication, ClusterId, Bucket} || Bucket <- Buckets].
+get_cached_remote_buckets(ClusterId) ->
+    [{_, Buckets}] = ets:lookup(?CACHE, {buckets, ClusterId}),
+    [{bucket, ClusterId, Bucket} || Bucket <- Buckets].
 
 gc() ->
     Clusters = get_remote_clusters_ids(),
@@ -828,16 +832,16 @@ gc() ->
     RemovedClusters = ordsets:subtract(CachedClusters, Clusters),
     lists:foreach(fun gc_cluster/1, RemovedClusters),
 
-    gc_vbucket_maps().
+    gc_buckets().
 
 gc_cluster(Cluster) ->
-    ClusterReplications = get_cached_cluster_replications(Cluster),
+    CachedBuckets = get_cached_remote_buckets(Cluster),
     lists:foreach(
-      fun (Replication) ->
-              true = ets:delete(?CACHE, Replication)
-      end, ClusterReplications).
+      fun (Bucket) ->
+              true = ets:delete(?CACHE, Bucket)
+      end, CachedBuckets).
 
-gc_vbucket_maps() ->
+gc_buckets() ->
     PresentReplications = build_present_replications_set(),
     lists:foreach(
       fun ([UUID, Bucket]) ->
@@ -845,9 +849,9 @@ gc_vbucket_maps() ->
                   true ->
                       ok;
                   false ->
-                      true = ets:delete(?CACHE, {replication, UUID, Bucket})
+                      true = ets:delete(?CACHE, {bucket, UUID, Bucket})
               end
-      end, ets:match(?CACHE, {{replication, '$1', '$2'}, '_'})).
+      end, ets:match(?CACHE, {{bucket, '$1', '$2'}, '_'})).
 
 build_present_replications_set() ->
     with_replicator_db(
