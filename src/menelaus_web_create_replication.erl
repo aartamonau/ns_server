@@ -21,6 +21,7 @@
 -include("menelaus_web.hrl").
 -include("ns_common.hrl").
 -include("couch_db.hrl").
+-include("remote_clusters_info.erl").
 
 -export([handle_create_replication/1]).
 
@@ -95,33 +96,39 @@ check_from_bucket(FromBucket, Buckets) ->
         {_, BucketConfig} ->
             case proplists:get_value(type, BucketConfig) of
                 membase ->
-                    [];
+                    {ok, BucketConfig};
                 X ->
                     [{<<"fromBucket">>,
                       list_to_binary("cannot replicate from this bucket type: " ++ atom_to_list(X))}]
             end
     end.
 
-%% check_bucket_uuid(BucketConfig, RemoteUUID) ->
-%%     %% can be undefined for old buckets
-%%     BucketUUID = proplists:get_value(uuid, BucketConfig),
+check_bucket_uuid(BucketConfig, RemoteUUID) ->
+    BucketUUID = proplists:get_value(uuid, BucketConfig),
+    true = (BucketUUID =/= undefined),
+
+    case BucketUUID =:= RemoteUUID of
+        true ->
+            [{<<"toBucket">>,
+              <<"Replication to the same bucket on the same cluster is disallowed">>}];
+        false ->
+            ok
+    end.
 
 validate_new_replication_params_check_from_bucket(FromBucket, ToCluster, ToBucket,
                                                   ReplicationType, Buckets) ->
     MaybeBucketError = check_from_bucket(FromBucket, Buckets),
     case MaybeBucketError of
-        [] ->
-            case remote_clusters_info:get_remote_vbucket_map(ToCluster, ToBucket) of
-                {ok, _VBucketMap} ->
-                    {ok, build_replication_doc(FromBucket, ToCluster,
-                                               ToBucket, ReplicationType)};
-                    %% case check_bucket_uuid(BucketConfig, UUID) of
-                    %%     ok ->
-                    %%         {ok, build_replication_doc(FromBucket, ToCluster,
-                    %%                                    ToBucket, ReplicationType)};
-                    %%     Errors ->
-                    %%         Errors
-                    %% end;
+        {ok, BucketConfig} ->
+            case remote_clusters_info:get_remote_bucket(ToCluster, ToBucket, true) of
+                {ok, #remote_bucket{uuid=RemoteUUID}} ->
+                    case check_bucket_uuid(BucketConfig, RemoteUUID) of
+                        ok ->
+                            {ok, build_replication_doc(FromBucket, ToCluster,
+                                                       ToBucket, ReplicationType)};
+                        Errors ->
+                            {error, Errors}
+                    end;
                 {error, Type, Msg} when Type =:= not_present;
                                         Type =:= not_capable ->
                     {error, [{<<"toBucket">>, Msg}]};
