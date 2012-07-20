@@ -114,7 +114,7 @@ handle_call({get_remote_bucket, Cluster, Bucket, true}, From, State) ->
 
     proc_lib:spawn_link(
       fun () ->
-              R = remote_cluster_vbmap(RemoteCluster, Bucket, Username, Password),
+              R = remote_cluster_and_bucket(RemoteCluster, Bucket, Username, Password),
 
               Reply =
                   case R of
