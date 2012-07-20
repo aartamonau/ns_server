@@ -67,16 +67,16 @@ handle_call({get_remote_cluster, Cluster}, From, State) ->
     proc_lib:spawn_link(
       fun () ->
               R = remote_cluster(Cluster),
-              gen_server:reply(From, R)%% ,
+              gen_server:reply(From, R),
 
-              %% case R of
-              %%     {ok, RemoteCluster} ->
-              %%         gen_server:cast(?MODULE,
-              %%                         {cache_remote_cluster,
-              %%                          Cluster, RemoteCluster});
-              %%     _ ->
-              %%         ok
-              %% end
+              case R of
+                  {ok, RemoteCluster} ->
+                      gen_server:cast(?MODULE,
+                                      {cache_remote_cluster,
+                                       Cluster, RemoteCluster});
+                  _ ->
+                      ok
+              end
       end),
     {noreply, State};
 handle_call({get_remote_vbucket_map, Cluster, Bucket}, From, State) ->
