@@ -139,11 +139,13 @@ validate_new_replication_params_check_from_bucket(FromBucket, ToCluster, ToBucke
 
 build_replication_doc(FromBucket, Cluster, ToBucket, ReplicationType) ->
     Reference = remote_clusters_info:remote_bucket_reference(Cluster, ToBucket),
+    TargetUUID = proplists:get_value(uuid, Cluster),
 
     [{type, <<"xdc">>},
      {source, list_to_binary(FromBucket)},
      %% {targetBucket, list_to_binary(ToBucket)},
      {target, Reference},
+     {targetUUID, TargetUUID},
      {continuous, case ReplicationType of
                       continuous -> true;
                       _ -> false

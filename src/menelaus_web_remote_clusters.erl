@@ -229,7 +229,7 @@ do_handle_remote_cluster_update_found_this(Id, Req, Params, JustValidate, OtherC
 %% actually go to remote cluster to verify it; returns updated cluster
 %% proplist with uuid being added;
 validate_remote_cluster(Cluster) ->
-    case remote_clusters_info:get_remote_cluster(Cluster) of
+    case remote_clusters_info:fetch_remote_cluster(Cluster) of
         {ok, #remote_cluster{uuid=UUID}} ->
             {ok, [{uuid, UUID} | lists:keydelete(uuid, 1, Cluster)]};
         {error, rest_error, Msg, _} ->
