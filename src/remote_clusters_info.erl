@@ -198,7 +198,7 @@ read_or_create_table(TableName, Path) ->
     end.
 
 dump_table(TableName, Path) ->
-    case ets:tab2file(TableName, Path, [{extended_info, [md5sum]}]) of
+    case ets:tab2file(TableName, Path) of
         ok ->
             ok;
         {error, Error} ->
