@@ -21,7 +21,7 @@
 -include("menelaus_web.hrl").
 -include("ns_common.hrl").
 -include("couch_db.hrl").
--include("remote_clusters_info.erl").
+-include("remote_clusters_info.hrl").
 
 -export([handle_create_replication/1]).
 
