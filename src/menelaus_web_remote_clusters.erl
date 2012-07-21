@@ -78,7 +78,7 @@ do_handle_remote_clusters_post(Req, Params, JustValidate, TriesLeft) ->
     ExistingClusters = get_remote_clusters(),
     case validate_remote_cluster_params(Params, ExistingClusters) of
         {ok, KVList} ->
-            case validate_remote_cluster(KVList) of
+            case validate_remote_cluster(KVList, ExistingClusters) of
                 {ok, FinalKVList} ->
                     case JustValidate of
                         undefined ->
@@ -202,7 +202,7 @@ do_handle_remote_cluster_update(Id, Req, Params, JustValidate, TriesLeft) ->
 do_handle_remote_cluster_update_found_this(Id, Req, Params, JustValidate, OtherClusters, ExistingClusters, TriesLeft) ->
     case validate_remote_cluster_params(Params, OtherClusters) of
         {ok, KVList} ->
-            case validate_remote_cluster(KVList) of
+            case validate_remote_cluster(KVList, OtherClusters) of
                 {ok, FinalKVList} ->
                     case JustValidate of
                         undefined ->
@@ -226,12 +226,38 @@ do_handle_remote_cluster_update_found_this(Id, Req, Params, JustValidate, OtherC
             menelaus_util:reply_json(Req, Errors, 400)
     end.
 
+check_remote_cluster_already_exists(RemoteUUID, Clusters) ->
+    case lists:dropwhile(
+           fun (Cluster) ->
+                   UUID = proplists:get_value(uuid, Cluster),
+                   true = (UUID =/= undefined),
+
+                   UUID =/= RemoteUUID
+           end, Clusters) of
+        [] ->
+            ok;
+        [Cluster | _] ->
+            Name = proplists:get_value(Cluster),
+            true = Name =/= undefined,
+
+            [{<<"_">>,
+              iolist_to_binary(
+                io_lib:format("Cluster reference to the same cluster already "
+                              "exists under the name `~s`", [Name]))}]
+    end.
+
 %% actually go to remote cluster to verify it; returns updated cluster
 %% proplist with uuid being added;
-validate_remote_cluster(Cluster) ->
+validate_remote_cluster(Cluster, OtherClusters) ->
     case remote_clusters_info:fetch_remote_cluster(Cluster) of
-        {ok, #remote_cluster{uuid=UUID}} ->
-            {ok, [{uuid, UUID} | lists:keydelete(uuid, 1, Cluster)]};
+        {ok, #remote_cluster{uuid=RemoteUUID}} ->
+            case check_remote_cluster_already_exists(RemoteUUID, OtherClusters) of
+                ok ->
+                    {ok, [{uuid, RemoteUUID} |
+                          lists:keydelete(uuid, 1, Cluster)]};
+                Errors ->
+                    {errors, 400, Errors}
+            end;
         {error, rest_error, Msg, _} ->
             Errors = [{<<"_">>, Msg}],
             {errors, 400, Errors};
