@@ -237,7 +237,7 @@ check_remote_cluster_already_exists(RemoteUUID, Clusters) ->
         [] ->
             ok;
         [Cluster | _] ->
-            Name = proplists:get_value(Cluster),
+            Name = proplists:get_value(name, Cluster),
             true = Name =/= undefined,
 
             [{<<"_">>,
