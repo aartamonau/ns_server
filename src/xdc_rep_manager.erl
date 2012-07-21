@@ -78,6 +78,7 @@
 -export([code_change/3, terminate/2]).
 
 -include("xdc_replicator.hrl").
+-include("remote_clusters_info.hrl").
 
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
@@ -330,7 +331,7 @@ start_xdc_replication(#rep{id = XRepId,
                       XDocBody) ->
     SrcBucket = ?b2l(SrcBucketBinary),
     SrcBucketLookup = ns_bucket:get_bucket(SrcBucket),
-    TgtBucketLookup = remote_clusters_info:get_remote_vbucket_map(TgtReference),
+    TgtBucketLookup = remote_clusters_info:get_remote_bucket(TgtReference, true),
 
     ?xdcr_info("starting xdc replication now..."),
     case {SrcBucketLookup, TgtBucketLookup} of
@@ -534,8 +535,8 @@ manage_vbucket_replications() ->
                   NumFreeSlots ->
                       {Vbs1, Vbs2} = lists:split(erlang:min(NumFreeSlots, length(Vbs)), Vbs),
                       %% Reread the target vbucket map once before retrying all reps
-                      {ok, TgtVbMap} =
-                          remote_clusters_info:get_remote_vbucket_map(TgtReference),
+                      {ok, #remote_bucket{vbucket_map=TgtVbMap}} =
+                          remote_clusters_info:get_remote_bucket(TgtReference, true),
                       lists:foreach(
                         fun(Vb) ->
                                 case lists:flatten(ets:match(
