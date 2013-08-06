@@ -197,6 +197,9 @@ process_update({Change}, State) ->
                     xdc_replication_sup:stop_replication(DocId),
                     {ok, _Pid} = xdc_replication_sup:start_replication(XRep),
                     State;
+                <<"xdc-memcached">> ->
+                    %% TODO
+                    State;
                 _ ->
                     State
             end
