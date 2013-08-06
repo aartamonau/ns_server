@@ -23,7 +23,8 @@
 -include("couch_db.hrl").
 -include("remote_clusters_info.hrl").
 
--export([handle_create_replication/1, handle_cancel_replication/2]).
+-export([handle_create_replication/1, handle_cancel_replication/2,
+         handle_replication_settings/2, handle_replication_settings_post/2]).
 
 -type replication_type() :: 'one-time' | continuous.
 
@@ -87,6 +88,18 @@ handle_cancel_replication(XID, Req) ->
         not_found ->
             menelaus_util:reply_json(Req, [], 404)
     end.
+
+handle_replication_settings(XID, Req) ->
+    with_replicator_doc(
+      Req, XID,
+      fun (RepDoc) ->
+              Settings = extract_settings(RepDoc),
+              Json = {struct, Settings},
+              menelaus_util:reply_json(Req, Json, 200)
+      end).
+
+handle_replication_settings_post(XID, Req) ->
+    ok.
 
 %% internal functions
 get_parameter(Name, Params, HumanName) ->
@@ -251,3 +264,29 @@ build_replication_doc(Type, FromBucket, ClusterUUID, ToBucket, ReplicationType) 
 
 replication_id(ClusterUUID, FromBucket, ToBucket) ->
     iolist_to_binary([ClusterUUID, $/, FromBucket, $/, ToBucket]).
+
+with_replicator_doc(Req, XID, Body) ->
+    case xdc_rdoc_replication_srv:get_full_replicator_doc(XID) of
+        not_found ->
+            menelaus_util:reply_404(Req);
+        {ok, Doc} ->
+            Body(Doc)
+    end.
+
+replication_settings_specs() ->
+    [{<<"max_concurrent_reps">>, {int, 1, 1024}},
+     {<<"checkpoint_interval">>, {int, 60, 14400}},
+     {<<"doc_batch_size_kb">>, {int, 500, 10000}},
+     {<<"failure_restart_interval">>, {int, 1, 300}},
+     {<<"worker_batch_size">>, {int, 500, 10000}},
+     {<<"connection_timeout">>, {int, 10, 10000}},
+     {<<"num_worker_process">>, {int, 1, 32}},
+     {<<"num_http_connections">>, {int, 1, 100}},
+     {<<"num_retries_per_request">>, {int, 0, 100}},
+     {<<"optimistic_replication_threshold">>, {int, 0, 20*1024*1024}}].
+
+extract_settings(#doc{body={Props}}) ->
+    Specs = replication_settings_specs(),
+
+    [{K, V} || {K, V} <- Props,
+               lists:keymember(K, 1, Specs)].
