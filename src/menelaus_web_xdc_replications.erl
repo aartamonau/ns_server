@@ -93,13 +93,54 @@ handle_replication_settings(XID, Req) ->
     with_replicator_doc(
       Req, XID,
       fun (RepDoc) ->
-              Settings = extract_settings(RepDoc),
-              Json = {struct, Settings},
-              menelaus_util:reply_json(Req, Json, 200)
+              handle_replication_settings_body(RepDoc, Req)
       end).
 
+handle_replication_settings_body(RepDoc, Req) ->
+    Settings = extract_settings(RepDoc),
+    Json = {struct, Settings},
+    menelaus_util:reply_json(Req, Json, 200).
+
 handle_replication_settings_post(XID, Req) ->
-    ok.
+    with_replicator_doc(
+      Req, XID,
+      fun (#doc{body={Props}} = RepDoc) ->
+              Params = Req:parse_post(),
+
+              Specs = replication_settings_specs(),
+              {Settings, Remove, Errors} =
+                  lists:foldl(
+                    fun ({Key, ReqKey, Type},
+                         {AccSettings, AccRemove, AccErrors} = Acc) ->
+                            case proplists:get_value(ReqKey, Params) of
+                                undefined ->
+                                    Acc;
+                                "" ->
+                                    {AccSettings, [Key | AccRemove], AccErrors};
+                                Str ->
+                                    case parse_validate_by_type(Type, Str) of
+                                        {ok, V} ->
+                                            {[{Key, V} | AccSettings],
+                                             AccRemove, AccErrors};
+                                        Error ->
+                                            {AccSettings, AccRemove,
+                                             [{ReqKey, Error} | AccErrors]}
+                                    end
+                            end
+                    end, {[], [], []}, Specs),
+
+              case Errors of
+                  [] ->
+                      Props1 = [{K, V} || {K, V} <- Props,
+                                          not(lists:member(K, Remove))],
+                      Props2 = misc:update_proplist(Props1, Settings),
+                      RepDoc1 = RepDoc#doc{body={Props2}},
+                      ok = xdc_rdoc_replication_srv:update_doc(RepDoc1),
+                      handle_replication_settings_body(RepDoc1, Req);
+                  _ ->
+                      menelaus_util:reply_json(Req, {struct, Errors}, 400)
+              end
+      end).
 
 %% internal functions
 get_parameter(Name, Params, HumanName) ->
@@ -274,19 +315,30 @@ with_replicator_doc(Req, XID, Body) ->
     end.
 
 replication_settings_specs() ->
-    [{<<"max_concurrent_reps">>, {int, 1, 1024}},
-     {<<"checkpoint_interval">>, {int, 60, 14400}},
-     {<<"doc_batch_size_kb">>, {int, 500, 10000}},
-     {<<"failure_restart_interval">>, {int, 1, 300}},
-     {<<"worker_batch_size">>, {int, 500, 10000}},
-     {<<"connection_timeout">>, {int, 10, 10000}},
-     {<<"num_worker_process">>, {int, 1, 32}},
-     {<<"num_http_connections">>, {int, 1, 100}},
-     {<<"num_retries_per_request">>, {int, 0, 100}},
-     {<<"optimistic_replication_threshold">>, {int, 0, 20*1024*1024}}].
+    [{<<"max_concurrent_reps">>, "maxConcurrentReps", {int, 1, 1024}},
+     {<<"checkpoint_interval">>, "checkpointInterval", {int, 60, 14400}},
+     {<<"doc_batch_size_kb">>, "docBatchSize", {int, 500, 10000}},
+     {<<"failure_restart_interval">>, "failureRestartInterval", {int, 1, 300}},
+     {<<"worker_batch_size">>, "workerBatchSize", {int, 500, 10000}},
+     {<<"connection_timeout">>, "connectionTimeout", {int, 10, 10000}},
+     {<<"num_worker_process">>, "numWorkerProcess", {int, 1, 32}},
+     {<<"num_http_connections">>, "numHttpConnections", {int, 1, 100}},
+     {<<"num_retries_per_request">>, "numRetriesPerRequest", {int, 0, 100}},
+     {<<"optimistic_replication_threshold">>,
+      "optimisticReplicationThreshold", {int, 0, 20 * 1024 * 1024}}].
 
 extract_settings(#doc{body={Props}}) ->
     Specs = replication_settings_specs(),
 
     [{K, V} || {K, V} <- Props,
                lists:keymember(K, 1, Specs)].
+
+parse_validate_by_type({int, Min, Max}, Str) ->
+    case menelaus_util:parse_validate_number(Str, Min, Max) of
+        {ok, Parsed} ->
+            {ok, Parsed};
+        _Error ->
+            Msg = io_lib:format("The value must be an integer between ~b and ~b",
+                                [Min, Max]),
+            iolist_to_binary(Msg)
+    end.
