@@ -97,7 +97,8 @@ handle_replication_settings(XID, Req) ->
       end).
 
 handle_replication_settings_body(RepDoc, Req) ->
-    Settings = xdc_settings:extract_per_replication_settings(RepDoc),
+    SettingsRaw = xdc_settings:extract_per_replication_settings(RepDoc),
+    Settings = [{key_to_request_key(K), V} || {K, V} <- SettingsRaw],
     Json = {struct, Settings},
     menelaus_util:reply_json(Req, Json, 200).
 
