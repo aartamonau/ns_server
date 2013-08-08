@@ -97,7 +97,7 @@ handle_replication_settings(XID, Req) ->
       end).
 
 handle_replication_settings_body(RepDoc, Req) ->
-    Settings = extract_settings(RepDoc),
+    Settings = xdc_settings:extract_per_replication_settings(RepDoc),
     Json = {struct, Settings},
     menelaus_util:reply_json(Req, Json, 200).
 
@@ -107,7 +107,7 @@ handle_replication_settings_post(XID, Req) ->
       fun (#doc{body={Props}} = RepDoc) ->
               Params = Req:parse_post(),
 
-              Specs = replication_settings_specs(),
+              Specs = per_replication_settings_specs(),
               {Settings, Remove, Errors} =
                   lists:foldl(
                     fun ({Key, ReqKey, Type},
@@ -314,24 +314,9 @@ with_replicator_doc(Req, XID, Body) ->
             Body(Doc)
     end.
 
-replication_settings_specs() ->
-    [{<<"max_concurrent_reps">>, "maxConcurrentReps", {int, 1, 1024}},
-     {<<"checkpoint_interval">>, "checkpointInterval", {int, 60, 14400}},
-     {<<"doc_batch_size_kb">>, "docBatchSize", {int, 500, 10000}},
-     {<<"failure_restart_interval">>, "failureRestartInterval", {int, 1, 300}},
-     {<<"worker_batch_size">>, "workerBatchSize", {int, 500, 10000}},
-     {<<"connection_timeout">>, "connectionTimeout", {int, 10, 10000}},
-     {<<"num_worker_process">>, "numWorkerProcess", {int, 1, 32}},
-     {<<"num_http_connections">>, "numHttpConnections", {int, 1, 100}},
-     {<<"num_retries_per_request">>, "numRetriesPerRequest", {int, 0, 100}},
-     {<<"optimistic_replication_threshold">>,
-      "optimisticReplicationThreshold", {int, 0, 20 * 1024 * 1024}}].
-
-extract_settings(#doc{body={Props}}) ->
-    Specs = replication_settings_specs(),
-
-    [{K, V} || {K, V} <- Props,
-               lists:keymember(K, 1, Specs)].
+per_replication_settings_specs() ->
+    [{couch_util:to_binary(Key), key_to_request_key(Key), Type} ||
+        {Key, Type} <- xdc_settings:per_replication_settings_specs()].
 
 parse_validate_by_type({int, Min, Max}, Str) ->
     case menelaus_util:parse_validate_number(Str, Min, Max) of
@@ -342,3 +327,9 @@ parse_validate_by_type({int, Min, Max}, Str) ->
                                 [Min, Max]),
             iolist_to_binary(Msg)
     end.
+
+key_to_request_key(Key) ->
+    KeyList = couch_util:to_list(Key),
+    [First | Rest] = string:tokens(KeyList, "_"),
+    RestCapitalized = [[string:to_upper(C) | TokenRest] || [C | TokenRest] <- Rest],
+    lists:concat([First | RestCapitalized]).

@@ -40,6 +40,12 @@ get_setting(RepDoc, Key) ->
             Value
     end.
 
+extract_per_replication_settings(#doc{body={Props}}) ->
+    InterestingKeys = [couch_util:to_binary(element(1, Spec)) ||
+                          Spec <- xdc_settings:per_replication_settings_specs()],
+
+    [{K, V} || {K, V} <- Props, lists:member(K, InterestingKeys)].
+
 %% internal
 settings_specs() ->
     [{max_concurrent_reps,              per_replication, {int, 1, 1024},             32},
