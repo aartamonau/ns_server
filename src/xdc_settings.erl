@@ -26,7 +26,39 @@ get_global_setting(Config, Key) ->
     Specs = settings_specs(),
     {Key, _, _, Default} = lists:keyfind(Key, 1, Specs),
 
-    ns_config:search(Config, setting_to_config_key(Key), Default).
+    ns_config:search(Config, key_to_config_key(Key), Default).
+
+update_global_settings(KVList0) ->
+    KVList = [{key_to_config_key(K), V} || {K, V} <- KVList0],
+    ns_config:set(KVList).
+
+get_all_global_settings() ->
+    get_all_global_settings('latest-config-marker').
+
+get_all_global_settings(Config) ->
+    Settings = [{Key, Default} || {Key, _, _, Default} <- settings_specs()],
+    ConfigKeyToKey = dict:from_list([{key_to_config_key(K), K} ||
+                                        {K, _} <- Settings]),
+
+    {Settings1, _} =
+        ns_config:fold(
+          fun (ConfigKey, Value, {AccSettings, Saw} = Acc) ->
+                  case dict:find(ConfigKey, ConfigKeyToKey) of
+                      {ok, Key} ->
+                          case sets:is_element(Key, Saw) of
+                              true ->
+                                  Acc;
+                              false ->
+                                  AccSettings1 = lists:keystore(Key, 1,
+                                                                AccSettings, {Key, Value}),
+                                  Saw1 = sets:add_element(Key, Saw),
+                                  {AccSettings1, Saw1}
+                          end;
+                      error ->
+                          Acc
+                  end
+          end, {Settings, sets:new()}, Config),
+    Settings1.
 
 get_setting(RepDoc, Key) ->
     true = lists:keymember(Key, 1, per_replication_settings_specs()),
@@ -46,7 +78,6 @@ extract_per_replication_settings(#doc{body={Props}}) ->
 
     [{K, V} || {K, V} <- Props, lists:member(K, InterestingKeys)].
 
-%% internal
 settings_specs() ->
     [{max_concurrent_reps,              per_replication, {int, 1, 1024},             32},
      {checkpoint_interval,              per_replication, {int, 60, 14400},           1800},
@@ -66,5 +97,6 @@ settings_specs() ->
 per_replication_settings_specs() ->
     [{Key, Type} || {Key, per_replication, Type, _Default} <- settings_specs()].
 
-setting_to_config_key(Key) when is_atom(Key) ->
-    list_to_atom("xdcr_" ++ atom_to_list(Key)).
+%% internal
+key_to_config_key(Key) ->
+    list_to_atom("xdcr_" ++ couch_util:to_list(Key)).
