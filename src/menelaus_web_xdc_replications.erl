@@ -164,10 +164,10 @@ screen_extract_new_replication_params(Params) ->
     Fields = [case proplists:get_value("type", Params) of
                   undefined ->
                       {ok, <<"xdc">>};
-                  "xdc" ->
+                  "capi" ->
                       {ok, <<"xdc">>};
-                  "xdc-memcached" ->
-                      {ok, <<"xdc-memcached">>};
+                  "xmem" ->
+                      {ok, <<"xdc-xmem">>};
                   _ ->
                       {error, <<"type">>, <<"type is invalid">>}
               end,

@@ -224,7 +224,7 @@ find_all_replication_docs_body(Doc0) ->
                                   _ -> []
                               end],
             case proplists:get_value(type, Props) of
-                V when V =:= <<"xdc">>; V =:= <<"xdc-memcached">> ->
+                V when V =:= <<"xdc">>; V =:= <<"xdc-xmem">> ->
                     [{id, Id} | Props];
                 _ ->
                     undefined
