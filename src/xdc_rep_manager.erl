@@ -188,7 +188,7 @@ process_update({Change}, State) ->
             case get_value(<<"type">>, Props) of
                 <<"xdc">> ->
                     ?xdcr_debug("replication doc (docId: ~p) modified, parse "
-                                "new doc and adjsut replications for change ("
+                                "new doc and adjust replications for change ("
                                 "source ~p, target: ~p)",
                                 [DocId, get_value(<<"source">>, Props),
                                  get_value(<<"target">>, Props)]),
