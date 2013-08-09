@@ -708,7 +708,8 @@ start_replication(#rep_state{
     WorkerOption = #rep_worker_option{
       cp = self(), source = Source, target = Target,
       changes_manager = ChangesManager, max_conns = MaxConns,
-      opt_rep_threshold = OptRepThreshold, xmem_server = XPid},
+      opt_rep_threshold = OptRepThreshold, xmem_server = XPid,
+      batch_size = BatchSize},
 
     Workers = lists:map(
                 fun(_) ->

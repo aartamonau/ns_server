@@ -25,7 +25,6 @@
 -export([get_master_db/1, get_checkpoint_log_id/2]).
 -export([get_opt_replication_threshold/0]).
 -export([update_options/1]).
--export([get_replication_batch_size/0]).
 -export([is_pipeline_enabled/0, get_trace_dump_invprob/0]).
 -export([get_xmem_worker/0, is_local_conflict_resolution/0]).
 
@@ -406,13 +405,6 @@ update_options(Options) ->
                       {worker_processes, DefWorkers},
                       {opt_rep_threshold, Threshold}]), Options).
 
--spec get_replication_batch_size() -> integer().
-get_replication_batch_size() ->
-    %% env parameter can override the ns_config parameter
-    {value, DefaultDocBatchSize} = ns_config:search(xdcr_worker_batch_size),
-    DocBatchSize = misc:getenv_int("XDCR_WORKER_BATCH_SIZE", DefaultDocBatchSize),
-    1024*DocBatchSize.
-
 -spec is_pipeline_enabled() -> boolean().
 is_pipeline_enabled() ->
     %% env parameter can override the ns_config parameter
@@ -430,9 +422,7 @@ is_pipeline_enabled() ->
 %% trace will be dumped by probability 1/N
 -spec get_trace_dump_invprob() -> integer().
 get_trace_dump_invprob() ->
-    %% env parameter can override the ns_config parameter
-    {value, DefInvProb} = ns_config:search(xdcr_trace_dump_inverse_prob),
-    misc:getenv_int("XDCR_TRACE_DUMP_INVERSE_PROB", DefInvProb).
+    xdc_settings:get_global_setting(trace_dump_inverse_prob).
 
 -spec get_xmem_worker() -> integer().
 get_xmem_worker() ->

@@ -262,7 +262,8 @@
           changes_manager,         %% process to queue changes from storage
           max_conns,               %% max connections
           xmem_server,             %% XMem server process
-          opt_rep_threshold        %% optimistic replication threshold
+          opt_rep_threshold,       %% optimistic replication threshold
+          batch_size               %% batch size
          }).
 
 %% statistics reported from worker process to its parent vbucket replicator
