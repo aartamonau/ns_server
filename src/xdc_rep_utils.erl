@@ -403,7 +403,10 @@ update_options(Options) ->
                       {http_connections, DefConns},
                       {worker_batch_size, DefBatchSize},
                       {worker_processes, DefWorkers},
-                      {opt_rep_threshold, Threshold}]), Options).
+                      {opt_rep_threshold, Threshold},
+                      {enable_pipeline_ops, is_pipeline_enabled()},
+                      {local_conflict_resolution, is_local_conflict_resolution()},
+                      {xmem_worker, get_xmem_worker()}]), Options).
 
 -spec is_pipeline_enabled() -> boolean().
 is_pipeline_enabled() ->

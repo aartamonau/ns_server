@@ -321,7 +321,8 @@
           time_connected,
           time_init,
           options,
-          error_reports
+          error_reports,
+          local_conflict_resolution
          }).
 
 

@@ -672,7 +672,7 @@ start_replication(#rep_state{
                _XMemRemote  ->
                    XMemSrvPid = case State#rep_state.xmem_srv of
                                     nil ->
-                                        {ok, XMemSrv} = xdc_vbucket_rep_xmem_srv:start_link(Vb, Remote, self()),
+                                        {ok, XMemSrv} = xdc_vbucket_rep_xmem_srv:start_link(Vb, Remote, self(), Options),
                                         XMemSrv;
                                     Pid ->
                                         case random:uniform(xdc_rep_utils:get_trace_dump_invprob()) of
