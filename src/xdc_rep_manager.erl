@@ -297,30 +297,22 @@ dump_parameters() ->
     {value, DefaultRestartWaitTime} = ns_config:search(xdcr_failure_restart_interval),
     RestartWaitTime = misc:getenv_int("XDCR_FAILURE_RESTART_INTERVAL", DefaultRestartWaitTime),
 
-    RepMode  = xdc_rep_utils:get_replication_mode(),
     OptRepThreshold = xdc_rep_utils:get_opt_replication_threshold(),
 
-    {NumXMemWorker, Pipeline, DefBatchSize, DocBatchSizeKB}
-        = case RepMode of
-              "xmem" ->
-                  DefNumXMemWorker = xdc_rep_utils:get_xmem_worker(),
-                  EnablePipeline = xdc_rep_utils:is_pipeline_enabled(),
-                  {DefNumXMemWorker, EnablePipeline, undefined, undefined};
-              "capi" ->
-                  {value, DefaultWorkerBatchSize} = ns_config:search(xdcr_worker_batch_size),
-                  BatchSize = misc:getenv_int("XDCR_WORKER_BATCH_SIZE",
-                                              DefaultWorkerBatchSize),
-                  {value, DefaultDocBatchSize} = ns_config:search(xdcr_doc_batch_size_kb),
-                  BatchSizeKB = misc:getenv_int("XDCR_DOC_BATCH_SIZE_KB",
-                                                DefaultDocBatchSize),
-                  {undefined, undefined, BatchSize, BatchSizeKB};
-              _ ->
-                  {undefined, undefined, undefined, undefined}
-          end,
+    NumXMemWorker = xdc_rep_utils:get_xmem_worker(),
+    Pipeline = xdc_rep_utils:is_pipeline_enabled(),
+
+    {value, DefaultWorkerBatchSize} = ns_config:search(xdcr_worker_batch_size),
+    DefBatchSize = misc:getenv_int("XDCR_WORKER_BATCH_SIZE",
+                                   DefaultWorkerBatchSize),
+
+    {value, DefaultDocBatchSize} = ns_config:search(xdcr_doc_batch_size_kb),
+    DocBatchSizeKB = misc:getenv_int("XDCR_DOC_BATCH_SIZE_KB",
+                                     DefaultDocBatchSize),
 
     ?xdcr_debug("default XDCR parameters:~n \t"
-                "replication mode: ~p (pipleline: ~p, "
-                "num xmem worker per vb replicator: ~p);~n \t"
+                "pipleline: ~p, "
+                "num xmem worker per vb replicator: ~p;~n \t"
                 "optimistic replication threshold: ~p bytes;~n \t"
                 "number of max concurrent reps per bucket: ~p;~n \t"
                 "checkpoint interval in secs: ~p;~n \t"
@@ -330,8 +322,7 @@ dump_parameters() ->
                 "max number HTTP connections per vb replicator: ~p;~n \t"
                 "max number retries per connection: ~p;~n \t"
                 "vb replicator waiting time before restart: ~p ",
-               [RepMode,
-                Pipeline,
+               [Pipeline,
                 NumXMemWorker,
                 OptRepThreshold,
                 MaxConcurrentReps,
@@ -344,4 +335,3 @@ dump_parameters() ->
                 RestartWaitTime
                 ]),
     ok.
-
