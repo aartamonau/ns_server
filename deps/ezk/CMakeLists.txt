@@ -1,0 +1,3 @@
+REBAR (TARGET ezk)
+ADD_DEPENDENCIES (ns_realclean ezk-clean)
+INSTALL (DIRECTORY ebin DESTINATION "${INST_LIBDIR}/ezk")
