@@ -24,30 +24,30 @@ terminate(Conn) ->
 
 handle_get(Path, Tag, Conn) ->
     ok = ezk:n_sync(Conn, Path, self(), {synced, Path, Tag}),
-    {ok, Conn}.
+    {noreply, Conn}.
 
 handle_create(Path, Value, Tag, Conn) ->
     ok = ezk:n_create(Conn, Path, term_to_binary(Value),
                       self(), {reply, create, Tag}),
-    {ok, Conn}.
+    {noreply, Conn}.
 
 handle_set(Path, Value, Tag, Conn) ->
     ok = ezk:n_set(Conn, Path, term_to_binary(Value),
                    self(), {reply, set, Tag}),
-    {ok, Conn}.
+    {noreply, Conn}.
 
 handle_set(Path, Value, Version, Tag, Conn) ->
     ok = ezk:n_set(Conn, Path, term_to_binary(Value), Version,
                    self(), {reply, set, Tag}),
-    {ok, Conn}.
+    {noreply, Conn}.
 
 handle_delete(Path, Tag, Conn) ->
     ok = ezk:n_delete(Conn, Path, self(), {reply, delete, Tag}),
-    {ok, Conn}.
+    {noreply, Conn}.
 
 handle_delete(Path, Version, Tag, Conn) ->
     ok = ezk:n_delete(Conn, Path, Version, self(), {reply, delete, Tag}),
-    {ok, Conn}.
+    {noreply, Conn}.
 
 handle_msg({{synced, Path, Tag}, RV}, Conn) ->
     case RV of

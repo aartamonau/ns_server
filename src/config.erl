@@ -20,23 +20,23 @@
     ok.
 
 -callback handle_get(cfg_path(), reference(), cfg_state()) ->
-    {ok, cfg_state()} | {error, cfg_error()}.
+    {noreply, cfg_state()} | {reply, any(), cfg_state()}.
 
 -callback handle_create(cfg_path(), cfg_value(), reference(), cfg_state()) ->
-    {ok, cfg_state()} | {error, cfg_error()}.
+    {noreply, cfg_state()} | {reply, any(), cfg_state()}.
 
 -callback handle_set(cfg_path(), cfg_value(), reference(), cfg_state()) ->
-    {ok, cfg_state()} | {error, cfg_error()}.
+    {noreply, cfg_state()} | {reply, any(), cfg_state()}.
 
 -callback handle_set(cfg_path(), cfg_value(), cfg_version(),
                      reference(), cfg_state()) ->
-    {ok, cfg_state()} | {error, cfg_error()}.
+    {noreply, cfg_state()} | {reply, any(), cfg_state()}.
 
 -callback handle_delete(cfg_path(), reference(), cfg_state()) ->
-    {ok, cfg_state()} | {error, cfg_error()}.
+    {noreply, cfg_state()} | {reply, any(), cfg_state()}.
 
 -callback handle_delete(cfg_path(), cfg_version(), reference(), cfg_state()) ->
-    {ok, cfg_state()} | {error, cfg_error()}.
+    {noreply, cfg_state()} | {reply, any(), cfg_state()}.
 
 -callback handle_msg(any(), cfg_state()) ->
     {noreply, cfg_state()} |
@@ -140,9 +140,9 @@ delegate_call(Call, Args, From, #state{backend = Backend,
 
     Tag = make_ref(),
     case erlang:apply(Backend, Call, Args ++ [Tag, BackendState]) of
-        {ok, NewBackendState} ->
+        {noreply, NewBackendState} ->
             true = ets:insert_new(Requests, {Tag, From}),
             {noreply, State#state{backend_state = NewBackendState}};
-        {error, _} = Error ->
-            {reply, Error, State}
+        {reply, Reply, NewBackendState} ->
+            {reply, Reply, State#state{backend_state = NewBackendState}}
     end.
