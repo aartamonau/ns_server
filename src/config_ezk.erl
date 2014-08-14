@@ -9,57 +9,59 @@
 
 -include_lib("ezk/include/ezk.hrl").
 
+-record(state, { connection :: ezk_conpid() }).
+
 init(_Args) ->
     application:start(ezk),
     %% TODO: get configuration from Args
     case ezk:start_connection([], [self()]) of
         {ok, Conn} ->
-            {ok, Conn};
+            {ok, #state{connection = Conn}};
         {error, Error} ->
             {error, {cant_create_ezk_connection, Error}}
     end.
 
-terminate(Conn) ->
+terminate(#state{connection = Conn}) ->
     ok = ezk:end_connection(Conn, "terminating").
 
-handle_get(Path, Tag, Conn) ->
+handle_get(Path, Tag, #state{connection = Conn} = State) ->
     ok = ezk:n_sync(Conn, Path, self(), {synced, Path, Tag}),
-    {noreply, Conn}.
+    {noreply, State}.
 
-handle_create(Path, Value, Tag, Conn) ->
+handle_create(Path, Value, Tag, #state{connection = Conn} = State) ->
     ok = ezk:n_create(Conn, Path, term_to_binary(Value),
                       self(), {reply, create, Tag}),
-    {noreply, Conn}.
+    {noreply, State}.
 
-handle_set(Path, Value, Tag, Conn) ->
+handle_set(Path, Value, Tag, #state{connection = Conn} = State) ->
     ok = ezk:n_set(Conn, Path, term_to_binary(Value),
                    self(), {reply, set, Tag}),
-    {noreply, Conn}.
+    {noreply, State}.
 
-handle_set(Path, Value, Version, Tag, Conn) ->
+handle_set(Path, Value, Version, Tag, #state{connection = Conn} = State) ->
     ok = ezk:n_set(Conn, Path, term_to_binary(Value), Version,
                    self(), {reply, set, Tag}),
-    {noreply, Conn}.
+    {noreply, State}.
 
-handle_delete(Path, Tag, Conn) ->
+handle_delete(Path, Tag, #state{connection = Conn} = State) ->
     ok = ezk:n_delete(Conn, Path, self(), {reply, delete, Tag}),
-    {noreply, Conn}.
+    {noreply, State}.
 
-handle_delete(Path, Version, Tag, Conn) ->
+handle_delete(Path, Version, Tag, #state{connection = Conn} = State) ->
     ok = ezk:n_delete(Conn, Path, Version, self(), {reply, delete, Tag}),
-    {noreply, Conn}.
+    {noreply, State}.
 
-handle_msg({{synced, Path, Tag}, RV}, Conn) ->
+handle_msg({{synced, Path, Tag}, RV}, #state{connection = Conn} = State) ->
     case RV of
         {ok, _Path} ->
             ok = ezk:n_get(Conn, Path, self(), {reply, get, Tag}),
-            {noreply, Conn};
+            {noreply, State};
         {error, Error} ->
-            {error, translate_error(Error)}
+            {reply, Tag, {error, translate_error(Error)}, State}
     end;
-handle_msg({{reply, ReplyType, Tag}, RV}, Conn) ->
-    {reply, Tag, translate_reply(ReplyType, RV), Conn};
-handle_msg(_, _Conn) ->
+handle_msg({{reply, ReplyType, Tag}, RV}, State) ->
+    {reply, Tag, translate_reply(ReplyType, RV), State};
+handle_msg(_, _State) ->
     ignore.
 
 %% TODO
