@@ -8,42 +8,42 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          code_change/3, terminate/2]).
 
--type cfg_path() :: string().
--type cfg_value() :: any().
--type cfg_version() :: any().
--type cfg_state() :: any().
--type cfg_error() :: any().
--type cfg_reason() :: any().
+-type path() :: string().
+-type value() :: any().
+-type version() :: any().
+-type state() :: any().
+-type error() :: any().
+-type reason() :: any().
 
 -callback init(Args :: any()) ->
-    {ok, cfg_state()} | {error, cfg_error()}.
+    {ok, state()} | {error, error()}.
 
--callback terminate(cfg_reason(), cfg_state()) ->
+-callback terminate(reason(), state()) ->
     ok.
 
--callback handle_get(cfg_path(), reference(), cfg_state()) ->
-    {noreply, cfg_state()} | {reply, any(), cfg_state()}.
+-callback handle_get(path(), reference(), state()) ->
+    {noreply, state()} | {reply, any(), state()}.
 
--callback handle_create(cfg_path(), cfg_value(), reference(), cfg_state()) ->
-    {noreply, cfg_state()} | {reply, any(), cfg_state()}.
+-callback handle_create(path(), value(), reference(), state()) ->
+    {noreply, state()} | {reply, any(), state()}.
 
--callback handle_set(cfg_path(), cfg_value(), reference(), cfg_state()) ->
-    {noreply, cfg_state()} | {reply, any(), cfg_state()}.
+-callback handle_set(path(), value(), reference(), state()) ->
+    {noreply, state()} | {reply, any(), state()}.
 
--callback handle_set(cfg_path(), cfg_value(), cfg_version(),
-                     reference(), cfg_state()) ->
-    {noreply, cfg_state()} | {reply, any(), cfg_state()}.
+-callback handle_set(path(), value(), version(),
+                     reference(), state()) ->
+    {noreply, state()} | {reply, any(), state()}.
 
--callback handle_delete(cfg_path(), reference(), cfg_state()) ->
-    {noreply, cfg_state()} | {reply, any(), cfg_state()}.
+-callback handle_delete(path(), reference(), state()) ->
+    {noreply, state()} | {reply, any(), state()}.
 
--callback handle_delete(cfg_path(), cfg_version(), reference(), cfg_state()) ->
-    {noreply, cfg_state()} | {reply, any(), cfg_state()}.
+-callback handle_delete(path(), version(), reference(), state()) ->
+    {noreply, state()} | {reply, any(), state()}.
 
--callback handle_msg(any(), cfg_state()) ->
-    {noreply, cfg_state()} |
-    {reply, reference(), any(), cfg_state()} |
-    {stop, any(), cfg_state()} |
+-callback handle_msg(any(), state()) ->
+    {noreply, state()} |
+    {reply, reference(), any(), state()} |
+    {stop, any(), state()} |
     ignore.
 
 -include("ns_common.hrl").
@@ -56,31 +56,31 @@
 start_link(Backend, Args) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, {Backend, Args}, []).
 
--spec get(cfg_path()) ->
-                 {ok, {cfg_value(), cfg_version()}} | {error, cfg_error()}.
+-spec get(path()) ->
+                 {ok, {value(), version()}} | {error, error()}.
 get(Path) ->
     gen_server:call(?MODULE, {get, Path}, infinity).
 
--spec create(cfg_path(), cfg_value()) ->
-                    {ok, cfg_version()} | {error, cfg_error()}.
+-spec create(path(), value()) ->
+                    {ok, version()} | {error, error()}.
 create(Path, Value) ->
     gen_server:call(?MODULE, {create, Path, Value}, infinity).
 
--spec set(cfg_path(), cfg_value()) ->
-                 {ok, cfg_version()} | {error, cfg_error()}.
+-spec set(path(), value()) ->
+                 {ok, version()} | {error, error()}.
 set(Path, Value) ->
     gen_server:call(?MODULE, {set, Path, Value}, infinity).
 
--spec set(cfg_path(), cfg_value(), cfg_version()) ->
-                 {ok, cfg_version()} | {error, cfg_error()}.
+-spec set(path(), value(), version()) ->
+                 {ok, version()} | {error, error()}.
 set(Path, Value, Version) ->
     gen_server:call(?MODULE, {set, Path, Value, Version}, infinity).
 
--spec delete(cfg_path()) -> ok | {error, cfg_error()}.
+-spec delete(path()) -> ok | {error, error()}.
 delete(Path) ->
     gen_server:call(?MODULE, {delete, Path}, infinity).
 
--spec delete(cfg_path(), cfg_version()) -> ok | {error, cfg_error()}.
+-spec delete(path(), version()) -> ok | {error, error()}.
 delete(Path, Version) ->
     gen_server:call(?MODULE, {delete, Path, Version}, infinity).
 
