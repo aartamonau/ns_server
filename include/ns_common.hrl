@@ -40,7 +40,7 @@
 %% ext vbucket id is vbucket id (potentially as binary) or <<"master">>
 -type ext_vbucket_id() :: vbucket_id() | binary().
 
--type version() :: {list(integer()), candidate | release, integer()}.
+-type server_version() :: {list(integer()), candidate | release, integer()}.
 
 -type checkpoint_id() :: non_neg_integer().
 

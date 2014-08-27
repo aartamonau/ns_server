@@ -1276,7 +1276,7 @@ dict_get(Key, Dict, Default) ->
 %% like: 1.8.0r-25-g1e1c2c0-enterprise.  Note that we should never
 %% see something like 1.7.0-enterprise, as older nodes won't carry
 %% the license type information.
--spec parse_version(string()) -> version().
+-spec parse_version(string()) -> server_version().
 parse_version(VersionStr) ->
     Parts = string:tokens(VersionStr, "_-"),
     case Parts of

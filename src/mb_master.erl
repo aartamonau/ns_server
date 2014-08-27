@@ -24,7 +24,7 @@
 -define(HEARTBEAT_INTERVAL, 2000).
 -define(TIMEOUT, ?HEARTBEAT_INTERVAL * 5000). % in microseconds
 
--type node_info() :: {version(), node()}.
+-type node_info() :: {server_version(), node()}.
 
 -record(state, {child :: pid(),
                 master :: node(),
