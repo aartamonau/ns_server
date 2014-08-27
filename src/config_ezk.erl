@@ -76,9 +76,9 @@ handle_watch(Paths, WatchRef, Tag, #state{connection = Conn,
                                                     paths_triggered = []}}),
     {noreply, State}.
 
-handle_unwatch(WatchRef, Tag, #state{watches = Watches} = State) ->
-    ets:delete(WatchRef, Watches),
-    {reply, Tag, ok, State}.
+handle_unwatch(WatchRef, _Tag, #state{watches = Watches} = State) ->
+    ets:delete(Watches, WatchRef),
+    {reply, ok, State}.
 
 handle_msg({{synced, Path, Tag}, RV}, #state{connection = Conn} = State) ->
     case RV of

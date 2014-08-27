@@ -137,7 +137,8 @@ handle_info({'DOWN', Ref, process, _, Reason} = Msg,
             ?log_debug("Removing watch ~p because ~p died with reason ~p",
                        [Ref, Pid, Reason]),
             %% TODO: don't expect this to reply immediately
-            {reply, _, _} = handle_call({unwatch, Ref}, unused, State)
+            {reply, ok, State} = handle_call({unwatch, Ref}, unused, State),
+            {noreply, State}
     end;
 handle_info(Msg, State) ->
     handle_other_msg(Msg, State).
