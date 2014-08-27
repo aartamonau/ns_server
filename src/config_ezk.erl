@@ -105,7 +105,7 @@ handle_msg({{watch_reply, Path, Tag, WatchRef}, RV} = Msg,
                             ets:insert(Watches, {WatchRef, initialized}),
                             [self() ! {{watch, P, WatchRef}, unused}
                              || P <- Triggered],
-                            {reply, Tag, ok, State};
+                            {reply, Tag, {ok, WatchRef}, State};
                         NewPaths ->
                             ets:insert(Watches,
                                        {WatchRef,
