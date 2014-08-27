@@ -94,7 +94,7 @@ handle_msg({{watch_reply, Path, Tag, WatchRef}, RV} = Msg,
            #state{watches = Watches} = State) ->
     case ets:lookup(Watches, WatchRef) of
         [{WatchRef, #pending_watch{paths_left = Paths,
-                                   paths_triggered = Triggered}}] ->
+                                   paths_triggered = Triggered} = Watch}] ->
             case RV of
                 {error, Error} when Error =/= no_node ->
                     ets:delete(Watches, WatchRef),
@@ -109,7 +109,7 @@ handle_msg({{watch_reply, Path, Tag, WatchRef}, RV} = Msg,
                         NewPaths ->
                             ets:insert(Watches,
                                        {WatchRef,
-                                        #pending_watch{paths_left = NewPaths}}),
+                                        Watch#pending_watch{paths_left = NewPaths}}),
                             {noreply, State}
                     end
             end;
@@ -140,10 +140,10 @@ handle_msg({{watch, Path, WatchRef}, _} = Msg,
                               {watch, Path, WatchRef},
                               {watch_rearm_reply, Path, WatchRef}),
             {noreply, State};
-        [{WatchRef, #pending_watch{paths_triggered = Triggered}}] ->
+        [{WatchRef, #pending_watch{paths_triggered = Triggered} = Watch}] ->
             ets:insert(Watches,
                        {WatchRef,
-                        #pending_watch{paths_triggered = [Path | Triggered]}}),
+                        Watch#pending_watch{paths_triggered = [Path | Triggered]}}),
             {noreply, State}
     end;
 handle_msg(_, _State) ->
