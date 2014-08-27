@@ -153,7 +153,7 @@ terminate(Reason, #state{backend = Backend,
 
     lists:foreach(
       fun ({WatchRef, Pid}) ->
-              Pid ! {watch_lost, WatchRef}
+              Pid ! {watch_lost, WatchRef, Reason}
       end, ets:tab2list(Watches)).
 
 reply(Tag, RV, #state{requests = Requests}) ->
