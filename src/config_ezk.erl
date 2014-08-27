@@ -117,12 +117,12 @@ handle_msg({{watch_reply, Path, Tag, WatchRef}, RV} = Msg,
             ?log_debug("Ignoring watch_reply with unknown tag: ~p", [Msg]),
             {noreply, State}
     end;
-handle_msg({{watch_rearm_reply, Path}, RV}, State) ->
+handle_msg({{watch_rearm_reply, Path, WatchRef}, RV}, State) ->
     case RV of
         {error, Error} when Error =/= no_node ->
             {stop, {couldnt_rearm_watch, Path, translate_error(Error)}, State};
         _ ->
-            {noreply, State}
+            {notify_watch, WatchRef, Path, State}
     end;
 handle_msg({'DOWN', _, process, Conn, Reason},
            #state{connection = Conn} = State) ->
@@ -138,8 +138,8 @@ handle_msg({{watch, Path, WatchRef}, _} = Msg,
         [{WatchRef, initialized}] ->
             ok = ezk:n_exists(Conn, Path, self(),
                               {watch, Path, WatchRef},
-                              {watch_rearm_reply, Path}),
-            {notify_watch, WatchRef, Path, State};
+                              {watch_rearm_reply, Path, WatchRef}),
+            {noreply, State};
         [{WatchRef, #pending_watch{paths_triggered = Triggered}}] ->
             ets:insert(Watches,
                        {WatchRef,
