@@ -816,7 +816,8 @@ handle_call({clear, Keep}, From, State) ->
 
     NewList0 = lists:filter(fun({K,_V}) -> lists:member(K, Keep) end,
                             config_dynamic(State)),
-    NewUUID = couch_uuids:random(),
+    %% NewUUID = couch_uuids:random(),
+    NewUUID = node_uuid:reset(),
     NewList = [{{node, node(), uuid}, attach_vclock(NewUUID, NewUUID)} | NewList0],
     {reply, _, NewState} = handle_call(resave, From,
                                        State#config{dynamic=[NewList],
@@ -897,19 +898,26 @@ load_config(ConfigPath, DirPath, PolicyMod) ->
                 end,
             ?log_debug("Here's full dynamic config we loaded:~n~p", [ns_config_log:sanitize(Dynamic0)]),
 
-            {UUID, Dynamic1} =
-                case search(Dynamic0, {node, node(), uuid}) of
-                    false ->
-                        UUID0 = couch_uuids:random(),
-                        UUIDTuple = {{node, node(), uuid}, attach_vclock(UUID0, UUID0)},
+            UUID = node_uuid:get(),
+            UUIDTuple = {{node, node(), uuid}, attach_vclock(UUID, UUID)},
+            [KVs | RestKVs] =
+                [[{K, V} || {K, V} <- KVs,
+                            K =/= {node, node(), uuid}] || KVs <- Dynamic0],
+            Dynamic1 = [[UUIDTuple | KVs] | RestKVs],
 
-                        [KVs | RestKVs] = Dynamic0,
-                        KVs1 = [UUIDTuple | KVs],
+            %% {UUID, Dynamic1} =
+            %%     case search(Dynamic0, {node, node(), uuid}) of
+            %%         false ->
+            %%             UUID0 = couch_uuids:random(),
+            %%             UUIDTuple = {{node, node(), uuid}, attach_vclock(UUID0, UUID0)},
 
-                        {UUID0, [KVs1 | RestKVs]};
-                    {value, UUID0} ->
-                        {UUID0, Dynamic0}
-                end,
+            %%             [KVs | RestKVs] = Dynamic0,
+            %%             KVs1 = [UUIDTuple | KVs],
+
+            %%             {UUID0, [KVs1 | RestKVs]};
+            %%         {value, UUID0} ->
+            %%             {UUID0, Dynamic0}
+            %%     end,
 
             DefaultConfigWithVClocks =
                 lists:map(
