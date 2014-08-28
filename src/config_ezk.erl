@@ -10,6 +10,8 @@
 -include_lib("ezk/include/ezk.hrl").
 -include("ns_common.hrl").
 
+-define(PREFIX, "/ns_server").
+
 -record(state, { connection :: ezk_conpid(),
                  watches :: ets:tid() }).
 
@@ -22,8 +24,21 @@ init(_Args) ->
     case ezk:start_connection([], [self()]) of
         {ok, Conn} ->
             erlang:monitor(process, Conn),
-            {ok, #state{connection = Conn,
-                        watches = ets:new(ok, [set, protected])}};
+
+            State = #state{connection = Conn,
+                           watches = ets:new(ok, [set, protected])},
+
+            ?log_debug("Creating ~p node for all our keys", [?PREFIX]),
+            case ezk:create(Conn, ?PREFIX, <<>>) of
+                {ok, _Path} ->
+                    {ok, State};
+                {error, node_exists} ->
+                    ?log_debug("~p already exists", [?PREFIX]),
+                    {ok, State};
+                {error, Error} ->
+                    ?log_error("Couldn't create ~p node: ~p", [?PREFIX, Error]),
+                    {error, {cant_create_prefix_node, Error}}
+            end;
         {error, Error} ->
             {error, {cant_create_ezk_connection, Error}}
     end.
@@ -37,37 +52,38 @@ terminate(_Reason, #state{connection = Conn}) ->
     end.
 
 handle_get(Path, Tag, #state{connection = Conn} = State) ->
-    ok = ezk:n_sync(Conn, Path, self(), {synced, Path, Tag}),
+    ok = ezk:n_sync(Conn, add_prefix(Path), self(), {synced, Path, Tag}),
     {noreply, State}.
 
 handle_create(Path, Value, Tag, #state{connection = Conn} = State) ->
-    ok = ezk:n_create(Conn, Path, term_to_binary(Value),
+    ok = ezk:n_create(Conn, add_prefix(Path), term_to_binary(Value),
                       self(), {reply, create, Tag}),
     {noreply, State}.
 
 handle_set(Path, Value, Tag, #state{connection = Conn} = State) ->
-    ok = ezk:n_set(Conn, Path, term_to_binary(Value),
+    ok = ezk:n_set(Conn, add_prefix(Path), term_to_binary(Value),
                    self(), {reply, set, Tag}),
     {noreply, State}.
 
 handle_set(Path, Value, Version, Tag, #state{connection = Conn} = State) ->
-    ok = ezk:n_set(Conn, Path, term_to_binary(Value), Version,
+    ok = ezk:n_set(Conn, add_prefix(Path), term_to_binary(Value), Version,
                    self(), {reply, set, Tag}),
     {noreply, State}.
 
 handle_delete(Path, Tag, #state{connection = Conn} = State) ->
-    ok = ezk:n_delete(Conn, Path, self(), {reply, delete, Tag}),
+    ok = ezk:n_delete(Conn, add_prefix(Path), self(), {reply, delete, Tag}),
     {noreply, State}.
 
 handle_delete(Path, Version, Tag, #state{connection = Conn} = State) ->
-    ok = ezk:n_delete(Conn, Path, Version, self(), {reply, delete, Tag}),
+    ok = ezk:n_delete(Conn, add_prefix(Path), Version, self(),
+                      {reply, delete, Tag}),
     {noreply, State}.
 
 handle_watch(Paths, WatchRef, Tag, #state{connection = Conn,
                                           watches = Watches} = State) ->
     lists:foreach(
       fun (Path) ->
-              ok = ezk:n_exists(Conn, Path, self(),
+              ok = ezk:n_exists(Conn, add_prefix(Path), self(),
                                 {watch, Path, WatchRef},
                                 {watch_reply, Path, Tag, WatchRef})
       end, Paths),
@@ -83,7 +99,7 @@ handle_unwatch(WatchRef, _Tag, #state{watches = Watches} = State) ->
 handle_msg({{synced, Path, Tag}, RV}, #state{connection = Conn} = State) ->
     case RV of
         {ok, _Path} ->
-            ok = ezk:n_get(Conn, Path, self(), {reply, get, Tag}),
+            ok = ezk:n_get(Conn, add_prefix(Path), self(), {reply, get, Tag}),
             {noreply, State};
         {error, Error} ->
             {reply, Tag, {error, translate_error(Error)}, State}
@@ -136,7 +152,7 @@ handle_msg({{watch, Path, WatchRef}, _} = Msg,
             ?log_debug("Ignoring notification for non-existent watch ~p", [Msg]),
             {noreply, State};
         [{WatchRef, initialized}] ->
-            ok = ezk:n_exists(Conn, Path, self(),
+            ok = ezk:n_exists(Conn, add_prefix(Path), self(),
                               {watch, Path, WatchRef},
                               {watch_rearm_reply, Path, WatchRef}),
             {noreply, State};
@@ -177,3 +193,6 @@ translate_reply(ReplyType, RV) ->
         {error, Error} ->
             {error, translate_error(Error)}
     end.
+
+add_prefix(Path) ->
+    ?PREFIX ++ Path.
