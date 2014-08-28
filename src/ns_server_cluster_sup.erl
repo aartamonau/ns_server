@@ -67,6 +67,8 @@ init([]) ->
             permanent, 1000, worker, []},
            {ns_cluster, {ns_cluster, start_link, []},
             permanent, 5000, worker, [ns_cluster]},
+           {node_uuid, {node_uuid, start_link, []},
+            permanent, 1000, worker, [node_uuid]},
            {config, {config, start_link, [config_ezk, undefined]},
             permanent, 5000, worker, [config]},
            {ns_config_sup, {ns_config_sup, start_link, []},
