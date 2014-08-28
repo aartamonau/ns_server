@@ -1217,7 +1217,8 @@ build_nodes_info_fun(IsAdmin, InfoLevel, LocalAddr) ->
                    {recoveryType,
                     ns_cluster_membership:get_recovery_type(Config, WantENode)},
                    {status, Status},
-                   {otpNode, list_to_binary(atom_to_list(WantENode))}
+                   {otpNode, list_to_binary(atom_to_list(WantENode))},
+                   {nodeUUID, node_uuid:get()}
                    | KV],
             %% NOTE: the following avoids exposing otpCookie to UI
             KV2 = case IsAdmin andalso InfoLevel =:= normal of
