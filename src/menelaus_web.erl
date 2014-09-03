@@ -901,15 +901,18 @@ handle_complete_join(Req) ->
 % Returns an UUID if it is already in the ns_config and generates
 % a new one otherwise.
 get_uuid() ->
-    case ns_config:search(uuid) of
-        false ->
-            Uuid = couch_uuids:random(),
-            ns_config:set(uuid, Uuid),
-            Uuid;
-        {value, Uuid2} ->
-            Uuid2
+    case config:get("/uuid") of
+        {ok, {UUID, _}} ->
+            UUID;
+        {error, no_node} ->
+            UUID = couch_uuids:random(),
+            case config:create("/uuid", UUID) of
+                {ok, _} ->
+                    UUID;
+                {error, node_exists} ->
+                    get_uuid()
+            end
     end.
-
 
 handle_versions(Req) ->
     reply_json(Req, {struct, menelaus_web_cache:versions_response()}).
