@@ -3,7 +3,8 @@
 -behaviour(gen_server).
 
 -export([start_link/2]).
--export([get/1, create/2, set/2, set/3, delete/1, delete/2]).
+-export([get/1, get/2, get_snapshot/0]).
+-export([create/2, set/2, set/3, delete/1, delete/2]).
 -export([watch/1, unwatch/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          code_change/3, terminate/2]).
@@ -60,6 +61,12 @@ start_link(Backend, Args) ->
                  {ok, {value(), version()}} | {error, error()}.
 get(Path) ->
     gen_server:call(?MODULE, {get, Path}, infinity).
+
+get(_Snapshot, Path) ->
+    config:get(Path).
+
+get_snapshot() ->
+    ok.
 
 -spec create(path(), value()) ->
                     {ok, version()} | {error, error()}.
