@@ -4,7 +4,7 @@
 
 -export([start_link/2]).
 -export([get/1, get/2, get_snapshot/0]).
--export([create/2, update/2, update/3, delete/1, delete/2]).
+-export([create/2, update/2, update/3, set/2, delete/1, delete/2]).
 -export([watch/1, unwatch/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          code_change/3, terminate/2]).
@@ -82,6 +82,26 @@ update(Path, Value) ->
                     {ok, version()} | {error, error()}.
 update(Path, Value, Version) ->
     gen_server:call(?MODULE, {update, Path, Value, Version}, infinity).
+
+-spec set(path(), value()) -> {ok, version()} | {error, error()}.
+set(Path, Value) ->
+    RV = update(Path, Value),
+    case RV of
+        {ok, _} ->
+            RV;
+        {error, no_node} ->
+            RV1 = create(Path, Value),
+            case RV1 of
+                {ok, _} ->
+                    RV1;
+                {error, node_exists} ->
+                    set(Path, Value);
+                {error, _} ->
+                    RV1
+            end;
+        {error, _} ->
+            RV
+    end.
 
 -spec delete(path()) -> ok | {error, error()}.
 delete(Path) ->
