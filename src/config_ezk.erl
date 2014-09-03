@@ -3,7 +3,7 @@
 -behaviour(config).
 
 -export([init/1, terminate/2]).
--export([handle_get/3, handle_create/4, handle_set/4, handle_set/5,
+-export([handle_get/3, handle_create/4, handle_update/4, handle_update/5,
          handle_delete/3, handle_delete/4, handle_watch/4, handle_unwatch/3]).
 -export([handle_msg/2]).
 
@@ -81,12 +81,12 @@ handle_create(Path, Value, Tag, #state{connection = Conn} = State) ->
                       self(), {reply, create, Tag}),
     {noreply, State}.
 
-handle_set(Path, Value, Tag, #state{connection = Conn} = State) ->
+handle_update(Path, Value, Tag, #state{connection = Conn} = State) ->
     ok = ezk:n_set(Conn, add_prefix(Path), term_to_binary(Value),
                    self(), {reply, set, Tag}),
     {noreply, State}.
 
-handle_set(Path, Value, Version, Tag, #state{connection = Conn} = State) ->
+handle_update(Path, Value, Version, Tag, #state{connection = Conn} = State) ->
     ok = ezk:n_set(Conn, add_prefix(Path), term_to_binary(Value), Version,
                    self(), {reply, set, Tag}),
     {noreply, State}.

@@ -4,7 +4,7 @@
 
 -export([start_link/2]).
 -export([get/1, get/2, get_snapshot/0]).
--export([create/2, set/2, set/3, delete/1, delete/2]).
+-export([create/2, update/2, update/3, delete/1, delete/2]).
 -export([watch/1, unwatch/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          code_change/3, terminate/2]).
@@ -28,11 +28,11 @@
 -callback handle_create(path(), value(), reference(), state()) ->
     {noreply, state()} | {reply, any(), state()}.
 
--callback handle_set(path(), value(), reference(), state()) ->
+-callback handle_update(path(), value(), reference(), state()) ->
     {noreply, state()} | {reply, any(), state()}.
 
--callback handle_set(path(), value(), version(),
-                     reference(), state()) ->
+-callback handle_update(path(), value(), version(),
+                        reference(), state()) ->
     {noreply, state()} | {reply, any(), state()}.
 
 -callback handle_delete(path(), reference(), state()) ->
@@ -73,15 +73,15 @@ get_snapshot() ->
 create(Path, Value) ->
     gen_server:call(?MODULE, {create, Path, Value}, infinity).
 
--spec set(path(), value()) ->
-                 {ok, version()} | {error, error()}.
-set(Path, Value) ->
-    gen_server:call(?MODULE, {set, Path, Value}, infinity).
+-spec update(path(), value()) ->
+                    {ok, version()} | {error, error()}.
+update(Path, Value) ->
+    gen_server:call(?MODULE, {update, Path, Value}, infinity).
 
--spec set(path(), value(), version()) ->
-                 {ok, version()} | {error, error()}.
-set(Path, Value, Version) ->
-    gen_server:call(?MODULE, {set, Path, Value, Version}, infinity).
+-spec update(path(), value(), version()) ->
+                    {ok, version()} | {error, error()}.
+update(Path, Value, Version) ->
+    gen_server:call(?MODULE, {update, Path, Value, Version}, infinity).
 
 -spec delete(path()) -> ok | {error, error()}.
 delete(Path) ->
@@ -112,10 +112,10 @@ handle_call({get, Path}, From, State) ->
     delegate_call(handle_get, [Path], From, State);
 handle_call({create, Path, Value}, From, State) ->
     delegate_call(handle_create, [Path, Value], From, State);
-handle_call({set, Path, Value}, From, State) ->
-    delegate_call(handle_set, [Path, Value], From, State);
-handle_call({set, Path, Value, Version}, From, State) ->
-    delegate_call(handle_set, [Path, Value, Version], From, State);
+handle_call({update, Path, Value}, From, State) ->
+    delegate_call(handle_update, [Path, Value], From, State);
+handle_call({update, Path, Value, Version}, From, State) ->
+    delegate_call(handle_update, [Path, Value, Version], From, State);
 handle_call({delete, Path}, From, State) ->
     delegate_call(handle_delete, [Path], From, State);
 handle_call({delete, Path, Version}, From, State) ->
