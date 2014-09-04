@@ -6,6 +6,7 @@
 -export([get/1, get/2, get_snapshot/0]).
 -export([create/2, update/2, update/3, set/2, delete/1, delete/2]).
 -export([watch/1, unwatch/1]).
+-epxort([reply/2, notify_watch/2]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          code_change/3, terminate/2]).
 
@@ -116,6 +117,15 @@ watch(Paths) ->
 unwatch(WatchRef) ->
     gen_server:call(?MODULE, {unwatch, WatchRef}, infinity).
 
+%% for use by backends only
+reply(Tag, RV) ->
+    gen_server:reply(Tag, RV).
+
+notify_watch({WatchRef, Pid}, Path) ->
+    Pid ! {watch, WatchRef, Path},
+    ok.
+
+%% gen_server_callbacks
 init({Backend, Args}) ->
     case Backend:init(Args) of
         {ok, BackendState} ->
@@ -181,9 +191,6 @@ terminate(Reason, #state{backend = Backend,
               Pid ! {watch_lost, WatchRef, Reason}
       end, ets:tab2list(Watches)).
 
-reply(Tag, RV) ->
-    gen_server:reply(Tag, RV).
-
 delegate_call(Call, Args, From, #state{backend = Backend,
                                        backend_state = BackendState} = State) ->
     case erlang:apply(Backend, Call, Args ++ [From, BackendState]) of
@@ -192,10 +199,6 @@ delegate_call(Call, Args, From, #state{backend = Backend,
         {reply, Reply, NewBackendState} ->
             {reply, Reply, State#state{backend_state = NewBackendState}}
     end.
-
-notify_watch({WatchRef, Pid}, Path) ->
-    Pid ! {watch, WatchRef, Path},
-    ok.
 
 handle_other_msg(Msg, #state{backend = Backend,
                              backend_state = BackendState} = State) ->
