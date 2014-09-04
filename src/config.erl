@@ -142,7 +142,7 @@ handle_call({watch, Paths}, {FromPid, _} = From,
             #state{watches = Watches} = State) ->
     WatchRef = erlang:monitor(process, FromPid),
     true = ets:insert_new(Watches, {WatchRef, FromPid}),
-    delegate_call(handle_watch, [Paths, WatchRef], From, State);
+    delegate_call(handle_watch, [Paths, {WatchRef, FromPid}], From, State);
 handle_call({unwatch, WatchRef}, From, #state{watches = Watches} = State) ->
     ets:delete(Watches, WatchRef),
     delegate_call(handle_unwatch, [WatchRef], From, State);
@@ -193,8 +193,7 @@ delegate_call(Call, Args, From, #state{backend = Backend,
             {reply, Reply, State#state{backend_state = NewBackendState}}
     end.
 
-notify_watch(WatchRef, Path, #state{watches = Watches}) ->
-    [{WatchRef, Pid}] = ets:lookup(Watches, WatchRef),
+notify_watch({WatchRef, Pid}, Path) ->
     Pid ! {watch, WatchRef, Path},
     ok.
 
@@ -207,7 +206,7 @@ handle_other_msg(Msg, #state{backend = Backend,
             reply(Tag, RV),
             {noreply, State#state{backend_state = NewBackendState}};
         {notify_watch, WatchRef, Path, NewBackendState} ->
-            notify_watch(WatchRef, Path, State),
+            notify_watch(WatchRef, Path),
             {noreply, State#state{backend_state = NewBackendState}};
         ignore ->
             ?log_warning("Got unexpected message ~p", [Msg]),
