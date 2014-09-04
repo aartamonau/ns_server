@@ -51,7 +51,6 @@
 
 -record(state, { backend :: module(),
                  backend_state :: any(),
-                 requests :: ets:tid(),
                  watches :: ets:tid() }).
 
 start_link(Backend, Args) ->
@@ -122,7 +121,6 @@ init({Backend, Args}) ->
         {ok, BackendState} ->
             {ok, #state{backend = Backend,
                         backend_state = BackendState,
-                        requests = ets:new(ok, [set, protected]),
                         watches = ets:new(ok, [set, protected])}};
         {error, _} = Error ->
             Error
@@ -183,18 +181,13 @@ terminate(Reason, #state{backend = Backend,
               Pid ! {watch_lost, WatchRef, Reason}
       end, ets:tab2list(Watches)).
 
-reply(Tag, RV, #state{requests = Requests}) ->
-    [{Tag, From}] = ets:lookup(Requests, Tag),
-    gen_server:reply(From, RV),
-    ets:delete(Requests, Tag).
+reply(Tag, RV) ->
+    gen_server:reply(Tag, RV).
 
 delegate_call(Call, Args, From, #state{backend = Backend,
-                                       backend_state = BackendState,
-                                       requests = Requests} = State) ->
-    Tag = make_ref(),
-    case erlang:apply(Backend, Call, Args ++ [Tag, BackendState]) of
+                                       backend_state = BackendState} = State) ->
+    case erlang:apply(Backend, Call, Args ++ [From, BackendState]) of
         {noreply, NewBackendState} ->
-            true = ets:insert_new(Requests, {Tag, From}),
             {noreply, State#state{backend_state = NewBackendState}};
         {reply, Reply, NewBackendState} ->
             {reply, Reply, State#state{backend_state = NewBackendState}}
@@ -211,7 +204,7 @@ handle_other_msg(Msg, #state{backend = Backend,
         {noreply, NewBackendState} ->
             {noreply, State#state{backend_state = NewBackendState}};
         {reply, Tag, RV, NewBackendState} ->
-            reply(Tag, RV, State),
+            reply(Tag, RV),
             {noreply, State#state{backend_state = NewBackendState}};
         {notify_watch, WatchRef, Path, NewBackendState} ->
             notify_watch(WatchRef, Path, State),
