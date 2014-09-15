@@ -13,10 +13,8 @@
 -define(PREFIX, "/ns_server").
 
 -record(state, { connection :: ezk_conpid(),
-                 watches :: ets:tid() }).
-
--record(pending_watch, { paths_left :: [config:cfg_path()],
-                         paths_triggered :: [config:cfg_path()] }).
+                 watches :: ets:tid(),
+                 watches_by_pid :: ets:tid() }).
 
 init(_Args) ->
     application:start(ezk),
@@ -26,7 +24,8 @@ init(_Args) ->
             erlang:monitor(process, Conn),
 
             State = #state{connection = Conn,
-                           watches = ets:new(ok, [set, protected])},
+                           watches = ets:new(ok, [set, protected]),
+                           watches_by_pid = ets:new(ok, [set, protected])},
 
             %% TODO
             case ezk:exists(Conn, ?PREFIX) of
@@ -64,13 +63,20 @@ init(_Args) ->
             {error, {cant_create_ezk_connection, Error}}
     end.
 
-terminate(_Reason, #state{connection = Conn}) ->
+terminate(Reason, #state{connection = Conn,
+                          watches = Watches}) ->
     case Conn =/= undefined of
         true ->
             ezk:end_connection(Conn, "terminating");
         false ->
             ok
-    end.
+    end,
+
+    lists:foreach(
+      fun ({_WatchRef, WatcherPid, _MRef}) ->
+              exit(WatcherPid, Reason),
+              misc:wait_for_process(WatcherPid, infinity)
+      end, ets:tab2list(Watches)).
 
 handle_get(Path, Tag, #state{connection = Conn} = State) ->
     ok = ezk:n_sync(Conn, add_prefix(Path), self(), {synced, Path, Tag}),
@@ -101,20 +107,28 @@ handle_delete(Path, Version, Tag, #state{connection = Conn} = State) ->
     {noreply, State}.
 
 handle_watch(Paths, WatchRef, Tag, #state{connection = Conn,
-                                          watches = Watches} = State) ->
-    lists:foreach(
-      fun (Path) ->
-              ok = ezk:n_exists(Conn, add_prefix(Path), self(),
-                                {watch, Path, WatchRef},
-                                {watch_reply, Path, Tag, WatchRef})
-      end, Paths),
-    true = ets:insert_new(Watches,
-                          {WatchRef, #pending_watch{paths_left = Paths,
-                                                    paths_triggered = []}}),
+                                          watches = Watches,
+                                          watches_by_pid = WatchesPids} = State) ->
+    {WatcherPid, MRef} =
+        spawn_monitor(
+          fun () ->
+                  watcher_init(Conn, Paths, WatchRef, Tag)
+          end),
+
+    true = ets:insert_new(Watches, {WatchRef, WatcherPid, MRef}),
+    true = ets:insert_new(WatchesPids, {WatcherPid, WatchRef}),
     {noreply, State}.
 
-handle_unwatch(WatchRef, _Tag, #state{watches = Watches} = State) ->
+handle_unwatch(WatchRef, _Tag, #state{watches = Watches,
+                                      watches_by_pid = WatchesPids} = State) ->
+    [{WatchRef, WatcherPid, MRef}] = ets:lookup(Watches, WatchRef),
+
+    erlang:demonitor(MRef, [flush]),
+    exit(WatcherPid, kill),
+    misc:wait_for_process(WatcherPid, infinity),
+
     ets:delete(Watches, WatchRef),
+    ets:delete(WatchesPids, WatcherPid),
     {reply, ok, State}.
 
 handle_msg({{synced, Path, Tag}, RV}, #state{connection = Conn} = State) ->
@@ -127,61 +141,18 @@ handle_msg({{synced, Path, Tag}, RV}, #state{connection = Conn} = State) ->
     end;
 handle_msg({{reply, ReplyType, Tag}, RV}, State) ->
     {reply, Tag, translate_reply(ReplyType, RV), State};
-handle_msg({{watch_reply, Path, Tag, WatchRef}, RV} = Msg,
-           #state{watches = Watches} = State) ->
-    case ets:lookup(Watches, WatchRef) of
-        [{WatchRef, #pending_watch{paths_left = Paths,
-                                   paths_triggered = Triggered} = Watch}] ->
-            case RV of
-                {error, Error} when Error =/= no_node ->
-                    ets:delete(Watches, WatchRef),
-                    {reply, Tag, {error, translate_error(Error)}, State};
-                _ ->
-                    case lists:delete(Path, Paths) of
-                        [] ->
-                            ets:insert(Watches, {WatchRef, initialized}),
-                            [self() ! {{watch, P, WatchRef}, unused}
-                             || P <- Triggered],
-                            {reply, Tag, {ok, WatchRef}, State};
-                        NewPaths ->
-                            ets:insert(Watches,
-                                       {WatchRef,
-                                        Watch#pending_watch{paths_left = NewPaths}}),
-                            {noreply, State}
-                    end
-            end;
-        [] ->
-            ?log_debug("Ignoring watch_reply with unknown tag: ~p", [Msg]),
-            {noreply, State}
-    end;
-handle_msg({{watch_rearm_reply, Path, WatchRef}, RV}, State) ->
-    case RV of
-        {error, Error} when Error =/= no_node ->
-            {stop, {couldnt_rearm_watch, Path, translate_error(Error)}, State};
-        _ ->
-            {notify_watch, WatchRef, Path, State}
-    end;
 handle_msg({'DOWN', _, process, Conn, Reason},
            #state{connection = Conn} = State) ->
     ?log_error("Lost connection to zookeeper: ~p. Terminating", [Reason]),
     {stop, {ezk_connection_lost, Reason}, State#state{connection = undefined}};
-handle_msg({{watch, Path, WatchRef}, _} = Msg,
-           #state{connection = Conn,
-                  watches = Watches} = State) ->
-    case ets:lookup(Watches, WatchRef) of
+handle_msg({'DOWN', _, process, Pid, Reason},
+           #state{watches_by_pid = WatchesPids} = State) ->
+    case ets:lookup(WatchesPids, Pid) of
         [] ->
-            ?log_debug("Ignoring notification for non-existent watch ~p", [Msg]),
-            {noreply, State};
-        [{WatchRef, initialized}] ->
-            ok = ezk:n_exists(Conn, add_prefix(Path), self(),
-                              {watch, Path, WatchRef},
-                              {watch_rearm_reply, Path, WatchRef}),
-            {noreply, State};
-        [{WatchRef, #pending_watch{paths_triggered = Triggered} = Watch}] ->
-            ets:insert(Watches,
-                       {WatchRef,
-                        Watch#pending_watch{paths_triggered = [Path | Triggered]}}),
-            {noreply, State}
+            ignore;
+        _ ->
+            ?log_error("Watch handler process ~p died: ~p", [Pid, Reason]),
+            {stop, {watcher_process_died, Pid, Reason}, State}
     end;
 handle_msg(_, _State) ->
     ignore.
@@ -191,14 +162,11 @@ translate_error(Error) ->
     Error.
 
 translate_ok_reply(get, {Data, #ezk_stat{dataversion = Version}}) ->
-    try
-        binary_to_term(Data)
-    of
-        Term ->
-            {ok, {Term, Version}}
-    catch
-        error:badarg ->
-            {error, conversion_error}
+    case to_term(Data) of
+        {ok, Term} ->
+            {ok, {Term, Version}};
+        Error ->
+            Error
     end;
 translate_ok_reply(create, _Path) ->
     {ok, 0};
@@ -215,12 +183,125 @@ translate_reply(ReplyType, RV) ->
             {error, translate_error(Error)}
     end.
 
+path_join(A, B) ->
+    filename:join(A, B).
+
 add_prefix(Path) ->
     case Path of
         "/" ->
             ?PREFIX;
         _ ->
             ?PREFIX ++ Path
+    end.
+
+watcher_init(Conn, Paths, WatchRef, ReplyTag) ->
+    PathInfos = ets:new(ok, [set, protected]),
+    setup_watches(Conn, Paths, WatchRef, PathInfos),
+    config:reply(ReplyTag, WatchRef),
+
+    watcher_loop(Conn, WatchRef, PathInfos).
+
+watcher_loop(Conn, WatchRef, PathInfos) ->
+    receive
+        {{get_watch, Path}, {_, node_deleted, _}} ->
+            ets:delete(PathInfos, Path),
+            config:notify_watch(WatchRef, {Path, deleted});
+        {{get_watch, Path}, _} ->
+            setup_node_watches(Conn, [Path], WatchRef);
+        {{ls_watch, Path}, {_, child_changed, _}} ->
+            setup_child_watches(Conn, [Path], WatchRef, PathInfos);
+        {{ls_watch, _Path}, _} ->
+            %% we get the same information from get watch; so ignoring
+            ok
+    end,
+
+    watcher_loop(Conn, WatchRef, PathInfos).
+
+setup_node_watches(Conn, Paths, WatchRef) ->
+    lists:foreach(
+      fun (Path) ->
+              ok = ezk:n_get(Conn, add_prefix(Path), self(),
+                             {get_watch, Path},
+                             {get_reply, Path})
+      end, Paths),
+
+    lists:foreach(
+      fun (Path) ->
+              receive
+                  {{get_reply, Path}, RV} ->  % Path is bound
+                      case RV of
+                          {ok, {Data, Stat}} ->
+                              case to_term(Data) of
+                                  {ok, Term} ->
+                                      Msg = {Path, {Term, Stat#ezk_stat.dataversion}},
+                                      config:notify_watch(WatchRef, Msg);
+                                  Error ->
+                                      ?log_error("Couldn't convert data "
+                                                 "for ~p to term: ~p", [Path, Error])
+                              end;
+                          {error, Error} ->
+                              throw({error, {Path, translate_error(Error)}})
+                      end
+              end
+      end, Paths).
+
+setup_child_watches(Conn, Paths, WatchRef, PathInfos) ->
+    lists:foreach(
+      fun (Path) ->
+              ok = ezk:n_ls(Conn, add_prefix(Path), self(),
+                            {ls_watch, Path},
+                            {ls_reply, Path})
+      end, Paths),
+
+    Children =
+        lists:flatmap(
+          fun (Path) ->
+                  receive
+                      {{ls_reply, Path}, RV} ->  % Path is bound
+                          case RV of
+                              {ok, NewChildren0} ->
+                                  NewChildren = ordsets:from_list(NewChildren0),
+                                  OldChildren =
+                                      case ets:lookup(PathInfos, Path) of
+                                          [] ->
+                                              [];
+                                          [{Path, V}] ->
+                                              V
+                                      end,
+
+                                  ets:insert(PathInfos, {Path, NewChildren}),
+
+                                  Created = ordsets:subtract(NewChildren, OldChildren),
+                                  [path_join(Path, P) || P <- Created];
+                              {error, no_node} ->
+                                  %% don't bother we'll get notification about this
+                                  [];
+                              {error, Error} ->
+                                  throw({error, {Path, translate_error(Error)}})
+                          end
+                  end
+          end, Paths),
+
+    case Children of
+        [] ->
+            ok;
+        _ ->
+            setup_watches(Conn, Children, WatchRef, PathInfos)
+    end.
+
+setup_watches(Conn, Paths, WatchRef, PathInfos) ->
+    setup_node_watches(Conn, Paths, WatchRef),
+    setup_child_watches(Conn, Paths, WatchRef, PathInfos).
+
+to_term(Data) ->
+    try
+        binary_to_term(Data)
+    of
+        Term ->
+            {ok, Term}
+    catch
+        error:badarg ->
+            {error, conversion_error}
     end.
 
 %% TODO: it shouldn't be here

@@ -121,8 +121,8 @@ unwatch(WatchRef) ->
 reply(Tag, RV) ->
     gen_server:reply(Tag, RV).
 
-notify_watch({WatchRef, Pid}, Path) ->
-    Pid ! {watch, WatchRef, Path},
+notify_watch({_, Pid} = WatchRef, Msg) ->
+    Pid ! {watch, WatchRef, Msg},
     ok.
 
 %% gen_server_callbacks
@@ -168,11 +168,11 @@ handle_info({'DOWN', Ref, process, _, Reason} = Msg,
     case ets:lookup(Watches, Ref) of
         [] ->
             handle_other_msg(Msg, State);
-        [{Ref, Pid}] ->
+        [{Ref, Pid} = FullRef] ->
             ?log_debug("Removing watch ~p because ~p died with reason ~p",
                        [Ref, Pid, Reason]),
             %% TODO: don't expect this to reply immediately
-            {reply, ok, State} = handle_call({unwatch, Ref}, unused, State),
+            {reply, ok, State} = handle_call({unwatch, FullRef}, unused, State),
             {noreply, State}
     end;
 handle_info(Msg, State) ->
@@ -187,7 +187,7 @@ terminate(Reason, #state{backend = Backend,
     ok = Backend:terminate(Reason, BackendState),
 
     lists:foreach(
-      fun ({WatchRef, Pid}) ->
+      fun ({_, Pid} = WatchRef) ->
               Pid ! {watch_lost, WatchRef, Reason}
       end, ets:tab2list(Watches)).
 
