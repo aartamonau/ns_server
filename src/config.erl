@@ -198,8 +198,8 @@ delegate_call(Call, Args, From, #state{backend = Backend,
             {noreply, State#state{backend_state = NewBackendState}};
         {reply, Reply, NewBackendState} ->
             {reply, Reply, State#state{backend_state = NewBackendState}};
-        {stop, Reason, State} ->
-            {stop, Reason, State}
+        {stop, Reason, NewBackendState} ->
+            {stop, Reason, State#state{backend_state = NewBackendState}}
     end.
 
 handle_other_msg(Msg, #state{backend = Backend,
@@ -210,6 +210,6 @@ handle_other_msg(Msg, #state{backend = Backend,
         ignore ->
             ?log_warning("Got unexpected message ~p", [Msg]),
             {noreply, State};
-        {stop, Reason, State} ->
-            {stop, Reason, State}
+        {stop, Reason, NewBackendState} ->
+            {stop, Reason, State#state{backend_state = NewBackendState}}
     end.
