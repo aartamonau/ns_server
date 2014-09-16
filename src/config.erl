@@ -16,6 +16,8 @@
 -type state() :: any().
 -type error() :: any().
 -type reason() :: any().
+-type watch_ref() :: any().
+-type path_pred() :: fun ((path()) -> boolean()).
 
 -callback init(Args :: any()) ->
     {ok, state()} | {error, error()}.
@@ -111,12 +113,15 @@ delete(Path) ->
 delete(Path, Version) ->
     gen_server:call(?MODULE, {delete, Path, Version}, infinity).
 
+-spec watch() -> watch_ref().
 watch() ->
     watch(fun (_) -> true end).
 
+-spec watch(path_pred()) -> watch_ref().
 watch(Pred) ->
     gen_server:call(?MODULE, {watch, Pred}, infinity).
 
+-spec unwatch(watch_ref()) -> ok.
 unwatch(WatchRef) ->
     gen_server:call(?MODULE, {unwatch, WatchRef}, infinity).
 
