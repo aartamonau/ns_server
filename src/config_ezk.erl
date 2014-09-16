@@ -106,18 +106,18 @@ handle_delete(Path, Version, Tag, #state{connection = Conn} = State) ->
                       {reply, delete, Tag}),
     {noreply, State}.
 
-handle_watch(Pred, WatchRef, Tag, #state{connection = Conn,
-                                         watches = Watches,
-                                         watches_by_pid = WatchesPids} = State) ->
+handle_watch(Pred, WatchRef, _Tag, #state{connection = Conn,
+                                          watches = Watches,
+                                          watches_by_pid = WatchesPids} = State) ->
     {WatcherPid, MRef} =
         spawn_monitor(
           fun () ->
-                  watcher_init(Conn, Pred, WatchRef, Tag)
+                  watcher_init(Conn, Pred, WatchRef)
           end),
 
     true = ets:insert_new(Watches, {WatchRef, WatcherPid, MRef}),
     true = ets:insert_new(WatchesPids, {WatcherPid, WatchRef}),
-    {noreply, State}.
+    {reply, WatchRef, State}.
 
 handle_unwatch(WatchRef, _Tag, #state{watches = Watches,
                                       watches_by_pid = WatchesPids} = State) ->
@@ -195,11 +195,9 @@ add_prefix(Path) ->
             ?PREFIX ++ Path
     end.
 
-watcher_init(Conn, Pred, WatchRef, ReplyTag) ->
+watcher_init(Conn, Pred, WatchRef) ->
     PathInfos = ets:new(ok, [set, protected]),
     setup_watches(Conn, ["/"], Pred, WatchRef, PathInfos),
-    config:reply(ReplyTag, WatchRef),
-
     watcher_loop(Conn, Pred, WatchRef, PathInfos).
 
 watcher_loop(Conn, Pred, WatchRef, PathInfos) ->
