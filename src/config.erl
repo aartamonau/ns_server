@@ -207,12 +207,6 @@ handle_other_msg(Msg, #state{backend = Backend,
     case Backend:handle_msg(Msg, BackendState) of
         {noreply, NewBackendState} ->
             {noreply, State#state{backend_state = NewBackendState}};
-        {reply, Tag, RV, NewBackendState} ->
-            reply(Tag, RV),
-            {noreply, State#state{backend_state = NewBackendState}};
-        {notify_watch, WatchRef, Path, NewBackendState} ->
-            notify_watch(WatchRef, Path),
-            {noreply, State#state{backend_state = NewBackendState}};
         ignore ->
             ?log_warning("Got unexpected message ~p", [Msg]),
             {noreply, State};

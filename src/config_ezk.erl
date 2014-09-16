@@ -134,13 +134,14 @@ handle_unwatch(WatchRef, _Tag, #state{watches = Watches,
 handle_msg({{synced, Path, Tag}, RV}, #state{connection = Conn} = State) ->
     case RV of
         {ok, _Path} ->
-            ok = ezk:n_get(Conn, add_prefix(Path), self(), {reply, get, Tag}),
-            {noreply, State};
+            ok = ezk:n_get(Conn, add_prefix(Path), self(), {reply, get, Tag});
         {error, Error} ->
-            {reply, Tag, {error, translate_error(Error)}, State}
-    end;
+            config:reply(Tag, {error, translate_error(Error)})
+    end,
+    {noreply, State};
 handle_msg({{reply, ReplyType, Tag}, RV}, State) ->
-    {reply, Tag, translate_reply(ReplyType, RV), State};
+    config:reply(Tag, translate_reply(ReplyType, RV)),
+    {noreply, State};
 handle_msg({'DOWN', _, process, Conn, Reason},
            #state{connection = Conn} = State) ->
     ?log_error("Lost connection to zookeeper: ~p. Terminating", [Reason]),
