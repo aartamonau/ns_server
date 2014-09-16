@@ -8,23 +8,24 @@
 %% called by proc_lib:start from subscribe_link/3
 -export([do_subscribe_link/4]).
 
-subscribe_link(Paths) ->
-    subscribe_link(Paths, msg_fun(self()), ignored).
+-spec subscribe_link(config:path_pred()) -> pid().
+subscribe_link(PathPred) ->
+    subscribe_link(PathPred, msg_fun(self()), ignored).
 
--spec subscribe_link([config:path()], fun((term()) -> Ignored :: any())) -> pid().
-subscribe_link(Paths, Fun) ->
+-spec subscribe_link(config:path_pred(), fun((term()) -> Ignored :: any())) -> pid().
+subscribe_link(PathPred, Fun) ->
     subscribe_link(
-      Paths,
+      PathPred,
       fun (Event, State) ->
               Fun(Event),
               State
       end, ignored).
 
--spec subscribe_link([config:path()],
+-spec subscribe_link(config:path_pred(),
                      fun((Event :: term(), State :: any()) -> NewState :: any()),
                      InitState :: any()) -> pid().
-subscribe_link(Paths, Fun, InitState) ->
-    proc_lib:start(?MODULE, do_subscribe_link, [Paths, Fun, InitState, self()]).
+subscribe_link(PathPred, Fun, InitState) ->
+    proc_lib:start(?MODULE, do_subscribe_link, [PathPred, Fun, InitState, self()]).
 
 unsubscribe(Pid) ->
     Pid ! unsubscribe,
@@ -43,21 +44,13 @@ unsubscribe(Pid) ->
 %%
 %% Internal functions
 %%
-do_subscribe_link(Paths, Fun, State, Parent) ->
+do_subscribe_link(PathPred, Fun, State, Parent) ->
     process_flag(trap_exit, true),
     erlang:link(Parent),
 
-    case config:watch(Paths) of
-        {ok, WatchRef} ->
-            ?log_debug("Subscribed to watch ~p for process ~p. WatchRef: ~p",
-                       [Paths, Parent, WatchRef]),
-            proc_lib:init_ack(Parent, {ok, self()}),
-            do_subscribe_link_loop(WatchRef, Fun, State, Parent);
-        {error, Error} ->
-            ?log_error("Couldn't subscribe to watch ~p for process ~p: ~p",
-                       [Paths, Parent, Error]),
-            proc_lib:init_ack(Parent, {error, Error})
-    end.
+    WatchRef = config:watch(PathPred),
+    proc_lib:init_ack(Parent, self()),
+    do_subscribe_link_loop(WatchRef, Fun, State, Parent).
 
 do_subscribe_link_loop(WatchRef, Fun, State, Parent) ->
     receive
@@ -70,8 +63,8 @@ do_subscribe_link_loop(WatchRef, Fun, State, Parent) ->
                 false ->
                     exit({config_crashed, Reason})
             end;
-        {watch, WatchRef, Path} ->
-            NewState = Fun({changed, Path}, State),
+        {watch, WatchRef, Msg} ->
+            NewState = Fun(Msg, State),
             do_subscribe_link_loop(WatchRef, Fun, NewState, Parent);
         {'EXIT', Parent, Reason} ->
             ?log_debug("Parent process ~p of subscription ~p"
