@@ -197,7 +197,9 @@ delegate_call(Call, Args, From, #state{backend = Backend,
         {noreply, NewBackendState} ->
             {noreply, State#state{backend_state = NewBackendState}};
         {reply, Reply, NewBackendState} ->
-            {reply, Reply, State#state{backend_state = NewBackendState}}
+            {reply, Reply, State#state{backend_state = NewBackendState}};
+        {stop, Reason, State} ->
+            {stop, Reason, State}
     end.
 
 handle_other_msg(Msg, #state{backend = Backend,
