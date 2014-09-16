@@ -232,14 +232,15 @@ setup_node_watches(Conn, Paths, WatchRef) ->
                   {{get_reply, Path}, RV} ->  % Path is bound
                       case RV of
                           {ok, {Data, Stat}} ->
-                              case to_term(Data) of
-                                  {ok, Term} ->
-                                      Msg = {Path, {Term, Stat#ezk_stat.dataversion}},
-                                      config:notify_watch(WatchRef, Msg);
-                                  Error ->
-                                      ?log_error("Couldn't convert data "
-                                                 "for ~p to term: ~p", [Path, Error])
-                              end;
+                              Msg = {Path,
+                                     case to_term(Data) of
+                                         {ok, Term} ->
+                                             {Term, Stat#ezk_stat.dataversion};
+                                         Error ->
+                                             Error
+                                     end},
+
+                              config:notify_watch(WatchRef, Msg);
                           {error, Error} ->
                               throw({error, {Path, translate_error(Error)}})
                       end
