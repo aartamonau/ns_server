@@ -6,7 +6,7 @@
 -export([get/1, get/2, get_snapshot/0]).
 -export([create/2, update/2, update/3, set/2, delete/1, delete/2]).
 -export([watch/1, unwatch/1]).
--epxort([reply/2, notify_watch/2]).
+-export([reply/2, notify_watch/2]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          code_change/3, terminate/2]).
 
