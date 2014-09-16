@@ -5,7 +5,7 @@
 -export([start_link/2]).
 -export([get/1, get/2, get_snapshot/0]).
 -export([create/2, update/2, update/3, set/2, delete/1, delete/2]).
--export([watch/1, unwatch/1]).
+-export([watch/0, watch/1, unwatch/1]).
 -export([reply/2, notify_watch/2]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          code_change/3, terminate/2]).
@@ -111,8 +111,11 @@ delete(Path) ->
 delete(Path, Version) ->
     gen_server:call(?MODULE, {delete, Path, Version}, infinity).
 
-watch(Paths) ->
-    gen_server:call(?MODULE, {watch, Paths}, infinity).
+watch() ->
+    watch(fun (_) -> true end).
+
+watch(Pred) ->
+    gen_server:call(?MODULE, {watch, Pred}, infinity).
 
 unwatch(WatchRef) ->
     gen_server:call(?MODULE, {unwatch, WatchRef}, infinity).
