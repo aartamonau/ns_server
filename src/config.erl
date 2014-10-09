@@ -4,6 +4,9 @@
 
 -export([start_link/2]).
 -export([get/1, get/2, get_snapshot/0]).
+-export([get_node/2, get_node/3]).
+-export([get_value/1, get_value/2, get_value/3]).
+-export([get_node_value/2, get_node_value/3, get_node_value/4]).
 -export([create/2, update/2, update/3, set/2, delete/1, delete/2]).
 -export([watch/0, watch/1, unwatch/1]).
 -export([reply/2, notify_watch/2]).
@@ -66,6 +69,50 @@ get(Path) ->
 
 get(_Snapshot, Path) ->
     config:get(Path).
+
+get_value(Path) ->
+    case config:get(Path) of
+        {ok, {V, _}} ->
+            {ok, V};
+        Error ->
+            Error
+    end.
+
+get_value(_Snapshot, Path) ->
+    config:get_value(Path).
+
+get_value(Snapshot, Path, Default) ->
+    case config:get_value(Snapshot, Path) of
+        {ok, V} ->
+            V;
+        {error, no_node} ->
+            Default
+    end.
+
+get_node(Node, Path) ->
+    config:get(filename:join(["/node", Node, Path])).
+
+get_node(_Snapshot, Node, Path) ->
+    config:get_node(Path, Node).
+
+get_node_value(Node, Path) ->
+    case get_node(Path, Node) of
+        {ok, {V, _}} ->
+            {ok, V};
+        Error ->
+            Error
+    end.
+
+get_node_value(_Snapshot, Node, Path) ->
+    config:get_node_value(Node, Path).
+
+get_node_value(Snapshot, Node, Path, Default) ->
+    case config:get_node_value(Snapshot, Node, Path) of
+        {ok, V} ->
+            V;
+        {error, no_node} ->
+            Default
+    end.
 
 get_snapshot() ->
     ok.
