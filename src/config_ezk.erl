@@ -106,18 +106,19 @@ handle_delete(Path, Version, Tag, #state{connection = Conn} = State) ->
                       {reply, delete, Tag}),
     {noreply, State}.
 
-handle_watch(Pred, WatchRef, _Tag, #state{connection = Conn,
-                                          watches = Watches,
-                                          watches_by_pid = WatchesPids} = State) ->
+handle_watch(Pred, WatchRef, ReplyTag,
+             #state{connection = Conn,
+                    watches = Watches,
+                    watches_by_pid = WatchesPids} = State) ->
     {WatcherPid, MRef} =
         spawn_monitor(
           fun () ->
-                  watcher_init(Conn, Pred, WatchRef)
+                  watcher_init(Conn, Pred, WatchRef, ReplyTag)
           end),
 
     true = ets:insert_new(Watches, {WatchRef, WatcherPid, MRef}),
     true = ets:insert_new(WatchesPids, {WatcherPid, WatchRef}),
-    {reply, WatchRef, State}.
+    {noreply, State}.
 
 handle_unwatch(WatchRef, _Tag, #state{watches = Watches,
                                       watches_by_pid = WatchesPids} = State) ->
@@ -195,9 +196,10 @@ add_prefix(Path) ->
             ?PREFIX ++ Path
     end.
 
-watcher_init(Conn, Pred, WatchRef) ->
+watcher_init(Conn, Pred, WatchRef, ReplyTag) ->
     PathInfos = ets:new(ok, [set, protected]),
-    setup_watches(Conn, ["/"], Pred, WatchRef, PathInfos),
+    setup_watches(Conn, ["/"], Pred, WatchRef, PathInfos, false),
+    config:reply(ReplyTag, WatchRef),
     watcher_loop(Conn, Pred, WatchRef, PathInfos).
 
 watcher_loop(Conn, Pred, WatchRef, PathInfos) ->
@@ -206,9 +208,9 @@ watcher_loop(Conn, Pred, WatchRef, PathInfos) ->
             ets:delete(PathInfos, Path),
             config:notify_watch(WatchRef, {Path, deleted});
         {{get_watch, Path}, _} ->
-            setup_node_watches(Conn, [Path], WatchRef);
+            setup_node_watches(Conn, [Path], WatchRef, true);
         {{ls_watch, Path}, {_, child_changed, _}} ->
-            setup_child_watches(Conn, [Path], Pred, WatchRef, PathInfos);
+            setup_child_watches(Conn, [Path], Pred, WatchRef, PathInfos, true);
         {{ls_watch, _Path}, _} ->
             %% we get the same information from get watch; so ignoring
             ok
@@ -216,7 +218,7 @@ watcher_loop(Conn, Pred, WatchRef, PathInfos) ->
 
     watcher_loop(Conn, Pred, WatchRef, PathInfos).
 
-setup_node_watches(Conn, Paths, WatchRef) ->
+setup_node_watches(Conn, Paths, WatchRef, Notify) ->
     lists:foreach(
       fun (Path) ->
               ok = ezk:n_get(Conn, add_prefix(Path), self(),
@@ -230,22 +232,27 @@ setup_node_watches(Conn, Paths, WatchRef) ->
                   {{get_reply, Path}, RV} ->  % Path is bound
                       case RV of
                           {ok, {Data, Stat}} ->
-                              Msg = {Path,
-                                     case to_term(Data) of
-                                         {ok, Term} ->
-                                             {Term, Stat#ezk_stat.dataversion};
-                                         Error ->
-                                             Error
-                                     end},
+                              case Notify of
+                                  true ->
+                                      Msg = {Path,
+                                             case to_term(Data) of
+                                                 {ok, Term} ->
+                                                     {Term, Stat#ezk_stat.dataversion};
+                                                 Error ->
+                                                     Error
+                                             end},
 
-                              config:notify_watch(WatchRef, Msg);
+                                      config:notify_watch(WatchRef, Msg);
+                                  false ->
+                                      ok
+                              end;
                           {error, Error} ->
                               throw({error, {Path, translate_error(Error)}})
                       end
               end
       end, Paths).
 
-setup_child_watches(Conn, Paths, Pred, WatchRef, PathInfos) ->
+setup_child_watches(Conn, Paths, Pred, WatchRef, PathInfos, Notify) ->
     lists:foreach(
       fun (Path) ->
               ok = ezk:n_ls(Conn, add_prefix(Path), self(),
@@ -286,13 +293,13 @@ setup_child_watches(Conn, Paths, Pred, WatchRef, PathInfos) ->
         [] ->
             ok;
         _ ->
-            setup_watches(Conn, Children, Pred, WatchRef, PathInfos)
+            setup_watches(Conn, Children, Pred, WatchRef, PathInfos, Notify)
     end.
 
-setup_watches(Conn, Paths, Pred, WatchRef, PathInfos) ->
+setup_watches(Conn, Paths, Pred, WatchRef, PathInfos, Notify) ->
     InterestingPaths = [P || P <- Paths, Pred(P)],
-    setup_node_watches(Conn, InterestingPaths, WatchRef),
-    setup_child_watches(Conn, Paths, Pred, WatchRef, PathInfos).
+    setup_node_watches(Conn, InterestingPaths, WatchRef, Notify),
+    setup_child_watches(Conn, Paths, Pred, WatchRef, PathInfos, Notify).
 
 to_term(Data) ->
     try
