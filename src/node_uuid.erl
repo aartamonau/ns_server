@@ -28,7 +28,9 @@ init([]) ->
     Path = path_config:component_path(data, "uuid"),
 
     case misc:raw_read_file(Path) of
-        {ok, UUID} ->
+        {ok, UUIDBinary} ->
+            UUID = binary_to_list(UUIDBinary),
+
             ?log_debug("Read uuid ~p from ~p", [UUID, Path]),
             true = ets:insert_new(?MODULE, {uuid, UUID}),
             {ok, #state{path = Path}, hibernate};
@@ -72,7 +74,7 @@ terminate(_Reason, _State) ->
 
 %% internal
 reset_uuid(Path) ->
-    UUID = couch_uuids:random(),
+    UUID = binary_to_list(couch_uuids:random()),
     ?log_debug("Generated new uuid ~p", [UUID]),
     case misc:atomic_write_file(Path, UUID) of
         ok ->
