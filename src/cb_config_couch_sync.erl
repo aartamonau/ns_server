@@ -35,8 +35,24 @@ start_link() ->
 
 init([]) ->
     consider_changing_db_path(),
-    ns_pubsub:subscribe_link(ns_config_events, fun handle_config_event/1),
-    announce_notable_keys(),
+
+    Self = self(),
+    NodeUUID = node_uuid:get(),
+    config_pubsub:subscribe_link(
+      true,
+      fun (Path) ->
+              is_notable_key(NodeUUID, Path)
+      end,
+      fun ({Path, {Value, _}}) ->
+              Key = case filename:split(Path) of
+                        ["/", "couchdb", K] ->
+                            K;
+                        ["/", "node", _NodeUUID, "couchdb", K] ->
+                            K
+                    end,
+              Self ! {notable_change, Key, Value}
+      end),
+
     {ok, #state{}}.
 
 -spec get_db_and_ix_paths() -> [{db_path | index_path, string()}].
@@ -65,31 +81,15 @@ handle_call(_Request, _From, State) ->
 handle_cast(_Request, State) ->
     {noreply, State}.
 
-handle_info({notable_change, Key}, State) ->
-    flush_for_key(Key),
+handle_info({notable_change, Key, Value0}, State) ->
+    Value = couch_util:to_list(flush_for_key(Key, Value0)),
+    CurrentValue = couch_config:get("couchdb", Key),
 
-    {couchdb, SK} = ActualKey = to_global_key(Key),
-
-    {value, ValueRaw} = ns_config:search_node(ActualKey),
-    Value = couch_util:to_list(ValueRaw),
-    {CouchSectionAtom, CouchKeyAtom} =
-        if
-            is_tuple(SK) ->
-                SK;
-            is_atom(SK) ->
-                %% if section is not specified, default to "couchdb"
-                {couchdb, SK}
-        end,
-
-    CouchSection = atom_to_list(CouchSectionAtom),
-    CouchKey     = atom_to_list(CouchKeyAtom),
-
-    Current = couch_config:get(CouchSection, CouchKey),
-    case Current =:= Value of
+    case CurrentValue =:= Value of
         true ->
             ok;
         false ->
-            ok = couch_config:set(CouchSection, CouchKey, Value)
+            ok = couch_config:set("couchdb", Key, Value)
     end,
 
     {noreply, State};
@@ -98,53 +98,24 @@ handle_info(_Event, State) ->
 
 %% Auxiliary functions.
 
-is_notable_key({couchdb, _}) -> true;
-is_notable_key({{node, Node, {couchdb, _}}}) when Node =:= node() -> true;
-is_notable_key(_) -> false.
-
-handle_config_event({Key, _Value}) ->
-    case is_notable_key(Key) of
-        true ->
-            ?MODULE ! {notable_change, Key};
+is_notable_key(NodeUUID, Path) ->
+    case filename:split(Path) of
+        ["/", "couchdb", _Key] ->
+            true;
+        ["/", "node", NodeUUID, "couchdb", _Key] ->
+            true;
         _ ->
-            ok
-    end;
-handle_config_event(_) ->
-    ok.
-
-to_global_key({couchdb, _} = Key) ->
-    Key;
-to_global_key({node, Node, {couchdb, _} = Key}) when Node =:= node() ->
-    Key.
-
-flush_for_key(Key) ->
-    GlobalKey = to_global_key(Key),
-    LocalKey  = {node, node(), GlobalKey},
-
-    do_flush_for_key(GlobalKey),
-    do_flush_for_key(LocalKey).
-
-do_flush_for_key(Key) ->
-    receive
-        {notable_change, Key, _} ->
-            do_flush_for_key(Key)
-    after
-        0 ->
-            ok
+            false
     end.
 
-announce_notable_keys() ->
-    KVList = ns_config:get_kv_list(),
-
-    lists:foreach(
-      fun ({Key, _Value}) ->
-              case is_notable_key(Key) of
-                  true ->
-                      ?MODULE ! {notable_change, Key};
-                  false ->
-                      ok
-              end
-      end, KVList).
+flush_for_key(Key, Value) ->
+    receive
+        {notable_change, Key, V} ->
+            flush_for_key(Key, V)
+    after
+        0 ->
+            Value
+    end.
 
 consider_changing_db_path() ->
     {value, MCDPList} = ns_config:search({node, node(), memcached}),
