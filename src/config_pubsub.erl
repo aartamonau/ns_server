@@ -3,29 +3,31 @@
 -include("ns_common.hrl").
 
 %% API
--export([subscribe_link/1, subscribe_link/2, subscribe_link/3, unsubscribe/1]).
+-export([subscribe_link/2, subscribe_link/3, subscribe_link/4, unsubscribe/1]).
 
 %% called by proc_lib:start from subscribe_link/3
--export([do_subscribe_link/4]).
+-export([do_subscribe_link/5]).
 
--spec subscribe_link(config:path_pred()) -> pid().
-subscribe_link(PathPred) ->
-    subscribe_link(PathPred, msg_fun(self()), ignored).
+-spec subscribe_link(boolean(), config:path_pred()) -> pid().
+subscribe_link(Announce, PathPred) ->
+    subscribe_link(Announce, PathPred, msg_fun(self()), ignored).
 
--spec subscribe_link(config:path_pred(), fun((term()) -> Ignored :: any())) -> pid().
-subscribe_link(PathPred, Fun) ->
+-spec subscribe_link(boolean(), config:path_pred(),
+                     fun((term()) -> Ignored :: any())) -> pid().
+subscribe_link(Announce, PathPred, Fun) ->
     subscribe_link(
-      PathPred,
+      Announce, PathPred,
       fun (Event, State) ->
               Fun(Event),
               State
       end, ignored).
 
--spec subscribe_link(config:path_pred(),
+-spec subscribe_link(boolean(), config:path_pred(),
                      fun((Event :: term(), State :: any()) -> NewState :: any()),
                      InitState :: any()) -> pid().
-subscribe_link(PathPred, Fun, InitState) ->
-    proc_lib:start(?MODULE, do_subscribe_link, [PathPred, Fun, InitState, self()]).
+subscribe_link(Announce, PathPred, Fun, InitState) ->
+    proc_lib:start(?MODULE, do_subscribe_link,
+                   [Announce, PathPred, Fun, InitState, self()]).
 
 unsubscribe(Pid) ->
     Pid ! unsubscribe,
@@ -44,11 +46,11 @@ unsubscribe(Pid) ->
 %%
 %% Internal functions
 %%
-do_subscribe_link(PathPred, Fun, State, Parent) ->
+do_subscribe_link(Announce, PathPred, Fun, State, Parent) ->
     process_flag(trap_exit, true),
     erlang:link(Parent),
 
-    WatchRef = config:watch(PathPred),
+    WatchRef = config:watch(Announce, PathPred),
     proc_lib:init_ack(Parent, self()),
     do_subscribe_link_loop(WatchRef, Fun, State, Parent).
 

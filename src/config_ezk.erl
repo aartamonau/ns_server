@@ -4,7 +4,7 @@
 
 -export([init/1, terminate/2]).
 -export([handle_get/3, handle_create/4, handle_update/4, handle_update/5,
-         handle_delete/3, handle_delete/4, handle_watch/4, handle_unwatch/3]).
+         handle_delete/3, handle_delete/4, handle_watch/5, handle_unwatch/3]).
 -export([handle_msg/2]).
 
 -include_lib("ezk/include/ezk.hrl").
@@ -106,14 +106,14 @@ handle_delete(Path, Version, Tag, #state{connection = Conn} = State) ->
                       {reply, delete, Tag}),
     {noreply, State}.
 
-handle_watch(Pred, WatchRef, ReplyTag,
+handle_watch(Announce, Pred, WatchRef, ReplyTag,
              #state{connection = Conn,
                     watches = Watches,
                     watches_by_pid = WatchesPids} = State) ->
     {WatcherPid, MRef} =
         spawn_monitor(
           fun () ->
-                  watcher_init(Conn, Pred, WatchRef, ReplyTag)
+                  watcher_init(Conn, Announce, Pred, WatchRef, ReplyTag)
           end),
 
     true = ets:insert_new(Watches, {WatchRef, WatcherPid, MRef}),
@@ -196,9 +196,9 @@ add_prefix(Path) ->
             ?PREFIX ++ Path
     end.
 
-watcher_init(Conn, Pred, WatchRef, ReplyTag) ->
+watcher_init(Conn, Announce, Pred, WatchRef, ReplyTag) ->
     PathInfos = ets:new(ok, [set, protected]),
-    setup_watches(Conn, ["/"], Pred, WatchRef, PathInfos, false),
+    setup_watches(Conn, ["/"], Pred, WatchRef, PathInfos, Announce),
     config:reply(ReplyTag, WatchRef),
     watcher_loop(Conn, Pred, WatchRef, PathInfos).
 
@@ -218,7 +218,7 @@ watcher_loop(Conn, Pred, WatchRef, PathInfos) ->
 
     watcher_loop(Conn, Pred, WatchRef, PathInfos).
 
-setup_node_watches(Conn, Paths, WatchRef, Notify) ->
+setup_node_watches(Conn, Paths, WatchRef, Announce) ->
     lists:foreach(
       fun (Path) ->
               ok = ezk:n_get(Conn, add_prefix(Path), self(),
@@ -232,7 +232,7 @@ setup_node_watches(Conn, Paths, WatchRef, Notify) ->
                   {{get_reply, Path}, RV} ->  % Path is bound
                       case RV of
                           {ok, {Data, Stat}} ->
-                              case Notify of
+                              case Announce of
                                   true ->
                                       Msg = {Path,
                                              case to_term(Data) of
@@ -252,7 +252,7 @@ setup_node_watches(Conn, Paths, WatchRef, Notify) ->
               end
       end, Paths).
 
-setup_child_watches(Conn, Paths, Pred, WatchRef, PathInfos, Notify) ->
+setup_child_watches(Conn, Paths, Pred, WatchRef, PathInfos, Announce) ->
     lists:foreach(
       fun (Path) ->
               ok = ezk:n_ls(Conn, add_prefix(Path), self(),
@@ -293,13 +293,13 @@ setup_child_watches(Conn, Paths, Pred, WatchRef, PathInfos, Notify) ->
         [] ->
             ok;
         _ ->
-            setup_watches(Conn, Children, Pred, WatchRef, PathInfos, Notify)
+            setup_watches(Conn, Children, Pred, WatchRef, PathInfos, Announce)
     end.
 
-setup_watches(Conn, Paths, Pred, WatchRef, PathInfos, Notify) ->
+setup_watches(Conn, Paths, Pred, WatchRef, PathInfos, Announce) ->
     InterestingPaths = [P || P <- Paths, Pred(P)],
-    setup_node_watches(Conn, InterestingPaths, WatchRef, Notify),
-    setup_child_watches(Conn, Paths, Pred, WatchRef, PathInfos, Notify).
+    setup_node_watches(Conn, InterestingPaths, WatchRef, Announce),
+    setup_child_watches(Conn, Paths, Pred, WatchRef, PathInfos, Announce).
 
 to_term(Data) ->
     try

@@ -8,7 +8,7 @@
 -export([get_value/1, get_value/2, get_value/3]).
 -export([get_node_value/2, get_node_value/3, get_node_value/4]).
 -export([create/2, update/2, update/3, set/2, delete/1, delete/2]).
--export([watch/0, watch/1, unwatch/1]).
+-export([watch/1, watch/2, unwatch/1]).
 -export([reply/2, notify_watch/2]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          code_change/3, terminate/2]).
@@ -160,13 +160,13 @@ delete(Path) ->
 delete(Path, Version) ->
     gen_server:call(?MODULE, {delete, Path, Version}, infinity).
 
--spec watch() -> watch_ref().
-watch() ->
-    watch(fun (_) -> true end).
+-spec watch(boolean()) -> watch_ref().
+watch(Announce) ->
+    watch(Announce, fun (_) -> true end).
 
--spec watch(path_pred()) -> watch_ref().
-watch(Pred) ->
-    gen_server:call(?MODULE, {watch, Pred}, infinity).
+-spec watch(boolean(), path_pred()) -> watch_ref().
+watch(Announce, Pred) ->
+    gen_server:call(?MODULE, {watch, Announce, Pred}, infinity).
 
 -spec unwatch(watch_ref()) -> ok.
 unwatch(WatchRef) ->
@@ -203,11 +203,12 @@ handle_call({delete, Path}, From, State) ->
     delegate_call(handle_delete, [Path], From, State);
 handle_call({delete, Path, Version}, From, State) ->
     delegate_call(handle_delete, [Path, Version], From, State);
-handle_call({watch, Paths}, {FromPid, _} = From,
+handle_call({watch, Announce, PathPred}, {FromPid, _} = From,
             #state{watches = Watches} = State) ->
     WatchRef = erlang:monitor(process, FromPid),
     true = ets:insert_new(Watches, {WatchRef, FromPid}),
-    delegate_call(handle_watch, [Paths, {WatchRef, FromPid}], From, State);
+    delegate_call(handle_watch,
+                  [Announce, PathPred, {WatchRef, FromPid}], From, State);
 handle_call({unwatch, WatchRef}, From, #state{watches = Watches} = State) ->
     ets:delete(Watches, WatchRef),
     delegate_call(handle_unwatch, [WatchRef], From, State);
