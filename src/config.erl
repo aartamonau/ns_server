@@ -19,6 +19,7 @@
 -type error() :: any().
 -type reason() :: any().
 -type watch_ref() :: any().
+-type reply_ref() :: reference().
 -type path_pred() :: fun ((path()) -> boolean()).
 -type watch_opt() :: announce_initial | {announce_initial, boolean()} |
                      {path_pred, path_pred()}.
@@ -30,29 +31,28 @@
 -callback terminate(reason(), state()) ->
     ok.
 
--callback handle_get(path(), reference(), state()) ->
+-callback handle_get(path(), reply_ref(), state()) ->
     {noreply, state()} | {reply, any(), state()}.
 
--callback handle_create(path(), value(), reference(), state()) ->
+-callback handle_create(path(), value(), reply_ref(), state()) ->
     {noreply, state()} | {reply, any(), state()}.
 
--callback handle_update(path(), value(), reference(), state()) ->
+-callback handle_update(path(), value(), reply_ref(), state()) ->
     {noreply, state()} | {reply, any(), state()}.
 
--callback handle_update(path(), value(), version(),
-                        reference(), state()) ->
+-callback handle_update(path(), value(), version(), reply_ref(), state()) ->
     {noreply, state()} | {reply, any(), state()}.
 
--callback handle_delete(path(), reference(), state()) ->
+-callback handle_delete(path(), reply_ref(), state()) ->
     {noreply, state()} | {reply, any(), state()}.
 
--callback handle_delete(path(), version(), reference(), state()) ->
+-callback handle_delete(path(), version(), reply_ref(), state()) ->
     {noreply, state()} | {reply, any(), state()}.
 
--callback handle_watch(boolean(), path_pred(), watch_ref(), reference(), state()) ->
+-callback handle_watch(boolean(), path_pred(), watch_ref(), reply_ref(), state()) ->
     {noreply, state()} | {reply, any(), state()}.
 
--callback handle_unwatch(watch_ref(), reference(), state()) ->
+-callback handle_unwatch(watch_ref(), reply_ref(), state()) ->
     {noreply, state()} | {reply, any(), state()}.
 
 -callback handle_msg(any(), state()) ->
