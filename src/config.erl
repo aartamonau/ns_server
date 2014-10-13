@@ -3,9 +3,11 @@
 -behaviour(gen_server).
 
 -export([start_link/2]).
--export([get/1, get/2, get_snapshot/0]).
+-export([get/1, get/2, dirty_get/1, get_snapshot/0]).
 -export([get_value/1, get_value/2, get_value/3]).
+-export([dirty_get_value/1, dirty_get_value/2]).
 -export([get_node_value/2, get_node_value/3, get_node_value/4]).
+-export([dirty_get_node_value/2, dirty_get_node_value/3]).
 -export([create/2, update/2, update/3, set/2, delete/1, delete/2]).
 -export([watch/0, watch/1, unwatch/1]).
 -export([reply/2, notify_watch/2]).
@@ -75,6 +77,9 @@ start_link(Backend, Args) ->
 get(Path) ->
     gen_server:call(?MODULE, {get, Path}, infinity).
 
+dirty_get(Path) ->
+    config:get(Path).
+
 get(_Snapshot, Path) ->
     config:get(Path).
 
@@ -85,6 +90,9 @@ get_value(Path) ->
         Error ->
             Error
     end.
+
+dirty_get_value(Path) ->
+    config:get_value(Path).
 
 get_value(_Snapshot, Path) ->
     config:get_value(Path).
@@ -97,6 +105,9 @@ get_value(Snapshot, Path, Default) ->
             Default
     end.
 
+dirty_get_value(Path, Default) ->
+    config:get_value(unused, Path, Default).
+
 get_node_value(Node, Path) ->
     NodePath = filename:join(["/node", Node, Path]),
 
@@ -106,6 +117,9 @@ get_node_value(Node, Path) ->
         Other ->
             Other
     end.
+
+dirty_get_node_value(Node, Path) ->
+    config:get_node_value(Node, Path).
 
 get_node_value(_Snapshot, Node, Path) ->
     config:get_node_value(Node, Path).
@@ -117,6 +131,9 @@ get_node_value(Snapshot, Node, Path, Default) ->
         {error, no_node} ->
             Default
     end.
+
+dirty_get_node_value(Node, Path, Default) ->
+    config:get_node_value(unused, Node, Path, Default).
 
 get_snapshot() ->
     ok.
