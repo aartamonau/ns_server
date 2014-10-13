@@ -39,10 +39,10 @@ init([]) ->
     Self = self(),
     NodeUUID = node_uuid:get(),
     config_pubsub:subscribe_link(
-      true,
-      fun (Path) ->
-              is_notable_key(NodeUUID, Path)
-      end,
+      [announce_initial,
+       {path_pred, fun (Path) ->
+                           is_notable_key(NodeUUID, Path)
+                   end}],
       fun ({Path, {Value, _}}) ->
               Key = case filename:split(Path) of
                         ["/", "couchdb", K] ->

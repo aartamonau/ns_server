@@ -7,7 +7,7 @@
 -export([get_value/1, get_value/2, get_value/3]).
 -export([get_node_value/2, get_node_value/3, get_node_value/4]).
 -export([create/2, update/2, update/3, set/2, delete/1, delete/2]).
--export([watch/1, watch/2, unwatch/1]).
+-export([watch/0, watch/1, unwatch/1]).
 -export([reply/2, notify_watch/2]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          code_change/3, terminate/2]).
@@ -20,6 +20,9 @@
 -type reason() :: any().
 -type watch_ref() :: any().
 -type path_pred() :: fun ((path()) -> boolean()).
+-type watch_opt() :: announce_initial | {announce_initial, boolean()} |
+                     {path_pred, path_pred()}.
+-type watch_opts() :: [watch_opt()].
 
 -callback init(Args :: any()) ->
     {ok, state()} | {error, error()}.
@@ -155,13 +158,17 @@ delete(Path) ->
 delete(Path, Version) ->
     gen_server:call(?MODULE, {delete, Path, Version}, infinity).
 
--spec watch(boolean()) -> watch_ref().
-watch(Announce) ->
-    watch(Announce, fun (_) -> true end).
+-spec watch() -> watch_ref().
+watch() ->
+    watch([]).
 
--spec watch(boolean(), path_pred()) -> watch_ref().
-watch(Announce, Pred) ->
-    gen_server:call(?MODULE, {watch, Announce, Pred}, infinity).
+-spec watch(watch_opts()) -> watch_ref().
+watch(Opts) ->
+    AnnounceInitial = proplists:get_bool(announce_initial, Opts),
+    PathPred = proplists:get_value(path_pred, Opts,
+                                   fun (_) -> true end),
+
+    gen_server:call(?MODULE, {watch, AnnounceInitial, PathPred}, infinity).
 
 -spec unwatch(watch_ref()) -> ok.
 unwatch(WatchRef) ->

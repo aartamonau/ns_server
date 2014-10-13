@@ -3,31 +3,31 @@
 -include("ns_common.hrl").
 
 %% API
--export([subscribe_link/2, subscribe_link/3, subscribe_link/4, unsubscribe/1]).
+-export([subscribe_link/1, subscribe_link/2, subscribe_link/3, unsubscribe/1]).
 
 %% called by proc_lib:start from subscribe_link/3
--export([do_subscribe_link/5]).
+-export([do_subscribe_link/4]).
 
--spec subscribe_link(boolean(), config:path_pred()) -> pid().
-subscribe_link(Announce, PathPred) ->
-    subscribe_link(Announce, PathPred, msg_fun(self()), ignored).
+-spec subscribe_link(config:watch_opts()) -> pid().
+subscribe_link(Opts) ->
+    subscribe_link(Opts, msg_fun(self()), ignored).
 
--spec subscribe_link(boolean(), config:path_pred(),
+-spec subscribe_link(config:watch_opts(),
                      fun((term()) -> Ignored :: any())) -> pid().
-subscribe_link(Announce, PathPred, Fun) ->
+subscribe_link(Opts, Fun) ->
     subscribe_link(
-      Announce, PathPred,
+      Opts,
       fun (Event, State) ->
               Fun(Event),
               State
       end, ignored).
 
--spec subscribe_link(boolean(), config:path_pred(),
+-spec subscribe_link(config:watch_opts(),
                      fun((Event :: term(), State :: any()) -> NewState :: any()),
                      InitState :: any()) -> pid().
-subscribe_link(Announce, PathPred, Fun, InitState) ->
+subscribe_link(Opts, Fun, InitState) ->
     proc_lib:start(?MODULE, do_subscribe_link,
-                   [Announce, PathPred, Fun, InitState, self()]).
+                   [Opts, Fun, InitState, self()]).
 
 unsubscribe(Pid) ->
     Pid ! unsubscribe,
@@ -46,11 +46,11 @@ unsubscribe(Pid) ->
 %%
 %% Internal functions
 %%
-do_subscribe_link(Announce, PathPred, Fun, State, Parent) ->
+do_subscribe_link(Opts, Fun, State, Parent) ->
     process_flag(trap_exit, true),
     erlang:link(Parent),
 
-    WatchRef = config:watch(Announce, PathPred),
+    WatchRef = config:watch(Opts),
     proc_lib:init_ack(Parent, self()),
     do_subscribe_link_loop(WatchRef, Fun, State, Parent).
 
