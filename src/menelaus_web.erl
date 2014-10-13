@@ -1572,22 +1572,11 @@ do_handle_eject_post(Req, OtpNode) ->
     end.
 
 handle_settings_max_parallel_indexers(Req) ->
-    Config = ns_config:get(),
+    Config = config:get_snapshot(),
 
-    GlobalValue =
-        case ns_config:search(Config, {couchdb, max_parallel_indexers}) of
-            false ->
-                null;
-            {value, V} ->
-                V
-        end,
-    ThisNodeValue =
-        case ns_config:search_node(node(), Config, {couchdb, max_parallel_indexers}) of
-            false ->
-                null;
-            {value, V2} ->
-                V2
-        end,
+    GlobalValue = config:get_value(Config, "/couchdb/max_parallel_indexers", null),
+    ThisNodeValue = config:get_node_value(Config, node_uuid:get(),
+                                          "/couchdb/max_parallel_indexers", null),
 
     reply_json(Req, {struct, [{globalValue, GlobalValue},
                               {nodes, {struct, [{node(), ThisNodeValue}]}}]}).
@@ -1597,7 +1586,7 @@ handle_settings_max_parallel_indexers_post(Req) ->
     V = proplists:get_value("globalValue", Params, ""),
     case parse_validate_number(V, 1, 1024) of
         {ok, Parsed} ->
-            ns_config:set({couchdb, max_parallel_indexers}, Parsed),
+            config:set("/couchdb/max_parallel_indexers", Parsed),
             handle_settings_max_parallel_indexers(Req);
         Error ->
             reply_json(Req, {struct, [{'_', iolist_to_binary(io_lib:format("Invalid globalValue: ~p", [Error]))}]}, 400)
