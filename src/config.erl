@@ -49,6 +49,12 @@
 -callback handle_delete(path(), version(), reference(), state()) ->
     {noreply, state()} | {reply, any(), state()}.
 
+-callback handle_watch(boolean(), path_pred(), watch_ref(), reference(), state()) ->
+    {noreply, state()} | {reply, any(), state()}.
+
+-callback handle_unwatch(watch_ref(), reference(), state()) ->
+    {noreply, state()} | {reply, any(), state()}.
+
 -callback handle_msg(any(), state()) ->
     {noreply, state()} |
     {reply, reference(), any(), state()} |
