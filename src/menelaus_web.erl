@@ -2915,26 +2915,26 @@ handle_settings_auto_compaction(Req) ->
     reply_json(Req, {struct, JSON}, 200).
 
 build_internal_settings_kvs() ->
-    Triples = [{index_aware_rebalance_disabled, indexAwareRebalanceDisabled, false},
-               {rebalance_index_waiting_disabled, rebalanceIndexWaitingDisabled, false},
-               {index_pausing_disabled, rebalanceIndexPausingDisabled, false},
-               {rebalance_ignore_view_compactions, rebalanceIgnoreViewCompactions, false},
-               {rebalance_moves_per_node, rebalanceMovesPerNode, 1},
-               {rebalance_moves_before_compaction, rebalanceMovesBeforeCompaction, 64},
-               {{couchdb, max_parallel_indexers}, maxParallelIndexers, <<>>},
-               {{couchdb, max_parallel_replica_indexers}, maxParallelReplicaIndexers, <<>>},
-               {max_bucket_count, maxBucketCount, 10},
-               {{xdcr, max_concurrent_reps}, xdcrMaxConcurrentReps, 32},
-               {{xdcr, checkpoint_interval}, xdcrCheckpointInterval, 1800},
-               {{xdcr, worker_batch_size}, xdcrWorkerBatchSize, 500},
-               {{xdcr, doc_batch_size_kb}, xdcrDocBatchSizeKb, 2048},
-               {{xdcr, failure_restart_interval}, xdcrFailureRestartInterval, 30},
-               {{xdcr, optimistic_replication_threshold}, xdcrOptimisticReplicationThreshold, 256},
-               {{request_limit, rest}, restRequestLimit, <<>>},
-               {{request_limit, capi}, capiRequestLimit, <<>>},
-               {drop_request_memory_threshold_mib, dropRequestMemoryThresholdMiB, <<>>},
-               {xdcr_anticipatory_delay, xdcrAnticipatoryDelay, 0}],
-    [{JK, case ns_config:read_key_fast(CK, DV) of
+    Triples = [{"/index_aware_rebalance_disabled", indexAwareRebalanceDisabled, false},
+               {"/rebalance_index_waiting_disabled", rebalanceIndexWaitingDisabled, false},
+               {"/index_pausing_disabled", rebalanceIndexPausingDisabled, false},
+               {"/rebalance_ignore_view_compactions", rebalanceIgnoreViewCompactions, false},
+               {"/rebalance_moves_per_node", rebalanceMovesPerNode, 1},
+               {"/rebalance_moves_before_compaction", rebalanceMovesBeforeCompaction, 64},
+               {"/couchdb/max_parallel_indexers", maxParallelIndexers, <<>>},
+               {"/couchdb/max_parallel_replica_indexers", maxParallelReplicaIndexers, <<>>},
+               {"/max_bucket_count", maxBucketCount, 10},
+               {"/xdcr/max_concurrent_reps", xdcrMaxConcurrentReps, 32},
+               {"/xdcr/checkpoint_interval", xdcrCheckpointInterval, 1800},
+               {"/xdcr/worker_batch_size", xdcrWorkerBatchSize, 500},
+               {"/xdcr/doc_batch_size_kb", xdcrDocBatchSizeKb, 2048},
+               {"/xdcr/failure_restart_interval", xdcrFailureRestartInterval, 30},
+               {"/xdcr/optimistic_replication_threshold", xdcrOptimisticReplicationThreshold, 256},
+               {"/request_limit/rest", restRequestLimit, <<>>},
+               {"/request_limit/capi", capiRequestLimit, <<>>},
+               {"/drop_request_memory_threshold_mib", dropRequestMemoryThresholdMiB, <<>>},
+               {"/xdcr_anticipatory_delay", xdcrAnticipatoryDelay, 0}],
+    [{JK, case config:dirty_get_value(CK, DV) of
               undefined ->
                   DV;
               V ->
@@ -2952,96 +2952,96 @@ handle_internal_settings_post(Req) ->
                        case proplists:get_value(JK, CurrentValues) of
                            V -> undefined;
                            _ ->
-                               fun () -> ns_config:set(CK, V) end
+                               fun () -> config:set(CK, V) end
                        end
                end,
     Actions = [case parse_validate_boolean_field("indexAwareRebalanceDisabled", [], Params) of
                    [] -> undefined;
-                   [{ok, _, V}] -> MaybeSet(indexAwareRebalanceDisabled, index_aware_rebalance_disabled, V)
+                   [{ok, _, V}] -> MaybeSet(indexAwareRebalanceDisabled, "/index_aware_rebalance_disabled", V)
                end,
                case parse_validate_boolean_field("rebalanceIndexWaitingDisabled", [], Params) of
                    [] -> undefined;
-                   [{ok, _, V}] -> MaybeSet(rebalanceIndexWaitingDisabled, rebalance_index_waiting_disabled, V)
+                   [{ok, _, V}] -> MaybeSet(rebalanceIndexWaitingDisabled, "/rebalance_index_waiting_disabled", V)
                end,
                case parse_validate_boolean_field("rebalanceIndexPausingDisabled", [], Params) of
                    [] -> undefined;
-                   [{ok, _, V}] -> MaybeSet(rebalanceIndexPausingDisabled, index_pausing_disabled, V)
+                   [{ok, _, V}] -> MaybeSet(rebalanceIndexPausingDisabled, "/index_pausing_disabled", V)
                end,
                case parse_validate_boolean_field("rebalanceIgnoreViewCompactions", [], Params) of
                    [] -> undefined;
-                   [{ok, _, V}] -> MaybeSet(rebalanceIgnoreViewCompactions, rebalance_ignore_view_compactions, V)
+                   [{ok, _, V}] -> MaybeSet(rebalanceIgnoreViewCompactions, "/rebalance_ignore_view_compactions", V)
                end,
                case proplists:get_value("rebalanceMovesPerNode", Params) of
                    undefined -> undefined;
                    SV ->
                        {ok, V} = parse_validate_number(SV, 1, 1024),
-                       MaybeSet(rebalanceMovesPerNode, rebalance_moves_per_node, V)
+                       MaybeSet(rebalanceMovesPerNode, "/rebalance_moves_per_node", V)
                end,
                case proplists:get_value("rebalanceMovesBeforeCompaction", Params) of
                    undefined -> undefined;
                    SV ->
                        {ok, V} = parse_validate_number(SV, 1, 1024),
-                       MaybeSet(rebalanceMovesBeforeCompaction, rebalance_moves_before_compaction, V)
+                       MaybeSet(rebalanceMovesBeforeCompaction, "/rebalance_moves_before_compaction", V)
                end,
                case proplists:get_value("maxParallelIndexers", Params) of
                    undefined -> undefined;
                    SV ->
                        {ok, V} = parse_validate_number(SV, 1, 1024),
-                       MaybeSet(maxParallelIndexers, {couchdb, max_parallel_indexers}, V)
+                       MaybeSet(maxParallelIndexers, "/couchdb/max_parallel_indexers", V)
                end,
                case proplists:get_value("maxParallelReplicaIndexers", Params) of
                    undefined -> undefined;
                    SV ->
                        {ok, V} = parse_validate_number(SV, 1, 1024),
-                       MaybeSet(maxParallelReplicaIndexers, {couchdb, max_parallel_replica_indexers}, V)
+                       MaybeSet(maxParallelReplicaIndexers, "/couchdb/max_parallel_replica_indexers", V)
                end,
                case proplists:get_value("maxBucketCount", Params) of
                    undefined -> undefined;
                    SV ->
                        {ok, V} = parse_validate_number(SV, 1, 8192),
-                       MaybeSet(maxBucketCount, max_bucket_count, V)
+                       MaybeSet(maxBucketCount, "/max_bucket_count", V)
                end,
                case proplists:get_value("xdcrMaxConcurrentReps", Params) of
                    undefined -> undefined;
                    SV ->
                        {ok, V} = parse_validate_number(SV, 1, 256),
-                       MaybeSet(xdcrMaxConcurrentReps, {xdcr, max_concurrent_reps}, V)
+                       MaybeSet(xdcrMaxConcurrentReps, "/xdcr/max_concurrent_reps", V)
                end,
                case proplists:get_value("xdcrCheckpointInterval", Params) of
                    undefined -> undefined;
                    SV ->
                        {ok, V} = parse_validate_number(SV, 60, 14400),
-                       MaybeSet(xdcrCheckpointInterval, {xdcr, checkpoint_interval}, V)
+                       MaybeSet(xdcrCheckpointInterval, "/xdcr/checkpoint_interval", V)
                end,
                case proplists:get_value("xdcrWorkerBatchSize", Params) of
                    undefined -> undefined;
                    SV ->
                        {ok, V} = parse_validate_number(SV, 500, 10000),
-                       MaybeSet(xdcrWorkerBatchSize, {xdcr, worker_batch_size}, V)
+                       MaybeSet(xdcrWorkerBatchSize, "/xdcr/worker_batch_size", V)
                end,
                case proplists:get_value("xdcrDocBatchSizeKb", Params) of
                    undefined -> undefined;
                    SV ->
                        {ok, V} = parse_validate_number(SV, 10, 100000),
-                       MaybeSet(xdcrDocBatchSizeKb, {xdcr, doc_batch_size_kb}, V)
+                       MaybeSet(xdcrDocBatchSizeKb, "/xdcr/doc_batch_size_kb", V)
                end,
                case proplists:get_value("xdcrFailureRestartInterval", Params) of
                    undefined -> undefined;
                    SV ->
                        {ok, V} = parse_validate_number(SV, 1, 300),
-                       MaybeSet(xdcrFailureRestartInterval, {xdcr, failure_restart_interval}, V)
+                       MaybeSet(xdcrFailureRestartInterval, "/xdcr/failure_restart_interval", V)
                end,
                case proplists:get_value("xdcrOptimisticReplicationThreshold", Params) of
                    undefined -> undefined;
                    "" -> undefined;
                    SV ->
                        {ok, V} = parse_validate_number(SV, 0, 20*1024*1024),
-                       MaybeSet(xdcrOptimisticReplicationThreshold, {xdcr, optimistic_replication_threshold}, V)
+                       MaybeSet(xdcrOptimisticReplicationThreshold, "/xdcr/optimistic_replication_threshold", V)
                end,
                case proplists:get_value("restRequestLimit", Params) of
                    undefined -> undefined;
                    Other ->
-                       MaybeSet(restRequestLimit, {request_limit, rest},
+                       MaybeSet(restRequestLimit, "/request_limit/rest",
                                 case Other of
                                     "" -> undefined;
                                     SV ->
@@ -3052,7 +3052,7 @@ handle_internal_settings_post(Req) ->
                case proplists:get_value("capiRequestLimit", Params) of
                    undefined -> undefined;
                    Other ->
-                       MaybeSet(capiRequestLimit, {request_limit, capi},
+                       MaybeSet(capiRequestLimit, "/request_limit/capi",
                                 case Other of
                                     "" -> undefined;
                                     SV ->
@@ -3063,7 +3063,7 @@ handle_internal_settings_post(Req) ->
                case proplists:get_value("dropRequestMemoryThresholdMiB", Params) of
                    undefined -> undefined;
                    Other ->
-                       MaybeSet(dropRequestMemoryThresholdMiB, drop_request_memory_threshold_mib,
+                       MaybeSet(dropRequestMemoryThresholdMiB, "/drop_request_memory_threshold_mib",
                                 case Other of
                                     "" -> undefined;
                                     SV ->
@@ -3075,7 +3075,7 @@ handle_internal_settings_post(Req) ->
                   undefined -> undefined;
                   Other ->
                       {ok, SV} = parse_validate_number(Other, 0, 99999),
-                      MaybeSet(xdcrAnticipatoryDelay, xdcr_anticipatory_delay, SV)
+                      MaybeSet(xdcrAnticipatoryDelay, "/xdcr_anticipatory_delay", SV)
               end],
     [Action()
      || Action <- Actions,
