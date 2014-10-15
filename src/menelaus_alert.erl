@@ -334,11 +334,11 @@ alert_key(auto_failover, Code) -> auto_failover:alert_key(Code);
 alert_key(_Module, _Code) -> all.
 
 get_alert_config() ->
-    {value, X} = ns_config:search(ns_config:get(), email_alerts),
+    {ok, X} = config:get_value("/email_alerts"),
     X.
 
 set_alert_config(AlertConfig) ->
-    ns_config:set(email_alerts, AlertConfig).
+    config:set("/email_alerts", AlertConfig).
 
 common_params(Params) ->
     MinTStamp = case proplists:get_value("sinceTime", Params) of

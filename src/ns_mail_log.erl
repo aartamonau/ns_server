@@ -48,7 +48,7 @@ terminate(_Reason, _State)     -> ok.
 code_change(_OldVsn, State, _) -> {ok, State}.
 
 handle_event({ns_log, _Category, Module, Code, Fmt, Args}, State) ->
-    {value, Config} = ns_config:search(email_alerts),
+    {ok, Config} = config:get_value("/email_alerts"),
     case proplists:get_bool(enabled, Config) of
         true ->
             AlertKey = menelaus_alert:alert_key(Module, Code),
