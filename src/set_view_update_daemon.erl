@@ -37,12 +37,13 @@ start_link() ->
 
 init([]) ->
     Self = self(),
-    ns_pubsub:subscribe_link(
-      ns_config_events,
-      fun ({set_view_update_daemon, _}) ->
-              Self ! config_changed;
-          (_) ->
-              ok
+    config_pubsub:subscribe_link(
+      [{path_pred,
+        fun (P) ->
+                P =:= "/set_view_update_daemon"
+        end}],
+      fun (_) ->
+              Self ! config_changed
       end),
 
     State = read_config(#state{}),

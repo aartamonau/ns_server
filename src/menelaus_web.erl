@@ -1593,7 +1593,7 @@ handle_settings_max_parallel_indexers_post(Req) ->
     end.
 
 handle_settings_view_update_daemon(Req) ->
-    {value, Config} = ns_config:search(set_view_update_daemon),
+    {ok, Config} = config:get_value("/set_view_update_daemon"),
 
     UpdateInterval = proplists:get_value(update_interval, Config),
     UpdateMinChanges = proplists:get_value(update_min_changes, Config),
@@ -1635,9 +1635,9 @@ handle_settings_view_update_daemon_post(Req) ->
 
     case Errors of
         [] ->
-            {value, CurrentProps} = ns_config:search(set_view_update_daemon),
+            {ok, CurrentProps} = config:get_value("/set_view_update_daemon"),
             MergedProps = misc:update_proplist(CurrentProps, Props),
-            ns_config:set(set_view_update_daemon, MergedProps),
+            config:set("/set_view_update_daemon", MergedProps),
             handle_settings_view_update_daemon(Req);
         _ ->
             reply_json(Req, {struct, Errors}, 400)
