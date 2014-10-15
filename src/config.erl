@@ -11,6 +11,7 @@
 -export([create/2, update/2, update/3, set/2, delete/1, delete/2]).
 -export([watch/0, watch/1, unwatch/1]).
 -export([reply/2, notify_watch/2]).
+-export([path_components/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          code_change/3, terminate/2]).
 
@@ -196,6 +197,11 @@ watch(Opts) ->
 -spec unwatch(watch_ref()) -> ok.
 unwatch(WatchRef) ->
     gen_server:call(?MODULE, {unwatch, WatchRef}, infinity).
+
+%% utility functions
+path_components(Path) ->
+    ["/" | Components] = filename:split(Path),
+    Components.
 
 %% for use by backends only
 reply(Tag, RV) ->

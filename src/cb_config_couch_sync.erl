@@ -44,10 +44,10 @@ init([]) ->
                            is_notable_key(NodeUUID, Path)
                    end}],
       fun ({Path, {Value, _}}) ->
-              Key = case filename:split(Path) of
-                        ["/", "couchdb", K] ->
+              Key = case config:path_components(Path) of
+                        ["couchdb", K] ->
                             K;
-                        ["/", "node", _NodeUUID, "couchdb", K] ->
+                        ["node", _NodeUUID, "couchdb", K] ->
                             K
                     end,
               Self ! {notable_change, Key, Value}
@@ -99,10 +99,10 @@ handle_info(_Event, State) ->
 %% Auxiliary functions.
 
 is_notable_key(NodeUUID, Path) ->
-    case filename:split(Path) of
-        ["/", "couchdb", _Key] ->
+    case config:path_components(Path) of
+        ["couchdb", _Key] ->
             true;
-        ["/", "node", NodeUUID, "couchdb", _Key] ->
+        ["node", NodeUUID, "couchdb", _Key] ->
             true;
         _ ->
             false
