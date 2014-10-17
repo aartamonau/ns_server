@@ -4,7 +4,8 @@
 
 -export([init/1, terminate/2]).
 -export([handle_get/3, handle_create/4, handle_update/4, handle_update/5,
-         handle_delete/3, handle_delete/4, handle_watch/5, handle_unwatch/3]).
+         handle_delete/3, handle_delete/4, handle_watch/5, handle_unwatch/3,
+         handle_transaction/3]).
 -export([handle_msg/2]).
 
 -include_lib("ezk/include/ezk.hrl").
@@ -132,6 +133,26 @@ handle_unwatch(WatchRef, _Tag, #state{watches = Watches,
     ets:delete(WatchesPids, WatcherPid),
     {reply, ok, State}.
 
+handle_transaction(Operations, Tag, #state{connection = Conn} = State) ->
+    EzkOps = [case Op of
+                  {check, Path, Version} ->
+                      ezk:check_op(add_prefix(Path), Version);
+                  {update, Path, Data} ->
+                      ezk:set_op(add_prefix(Path), Data);
+                  {update, Path, Data, Version} ->
+                      ezk:set_op(add_prefix(Path), Data, Version);
+                  {delete, Path} ->
+                      ezk:delete_op(add_prefix(Path));
+                  {delete, Path, Version} ->
+                      ezk:delete_op(add_prefix(Path), Version);
+                  {create, Path, Data} ->
+                      ezk:create_op(add_prefix(Path), Data)
+              end || Op <- Operations],
+
+    Types = [element(1, Op) || Op <- EzkOps],
+    ezk:n_transaction(Conn, EzkOps, self(), {reply, transaction, Tag, Types}),
+    {noreply, State}.
+
 handle_msg({{synced, Path, Tag}, RV}, #state{connection = Conn} = State) ->
     case RV of
         {ok, _Path} ->
@@ -141,7 +162,9 @@ handle_msg({{synced, Path, Tag}, RV}, #state{connection = Conn} = State) ->
     end,
     {noreply, State};
 handle_msg({{reply, ReplyType, Tag}, RV}, State) ->
-    config:reply(Tag, translate_reply(ReplyType, RV)),
+    handle_msg({{reply, ReplyType, Tag, undefined}, RV}, State);
+handle_msg({{reply, ReplyType, Tag, Extra}, RV}, State) ->
+    config:reply(Tag, translate_reply(ReplyType, Extra, RV)),
     {noreply, State};
 handle_msg({'DOWN', _, process, Conn, Reason},
            #state{connection = Conn} = State) ->
@@ -163,24 +186,26 @@ handle_msg(_, _State) ->
 translate_error(Error) ->
     Error.
 
-translate_ok_reply(get, {Data, #ezk_stat{dataversion = Version}}) ->
+translate_ok_reply(get, _, {Data, #ezk_stat{dataversion = Version}}) ->
     case to_term(Data) of
         {ok, Term} ->
             {ok, {Term, Version}};
         Error ->
             Error
     end;
-translate_ok_reply(create, _Path) ->
+translate_ok_reply(create, _, _Path) ->
     {ok, 0};
-translate_ok_reply(set, #ezk_stat{dataversion = Version}) ->
-    {ok, Version}.
+translate_ok_reply(set, _, #ezk_stat{dataversion = Version}) ->
+    {ok, Version};
+translate_ok_reply(transaction, Types, RV) ->
+    {ok, [translate_reply(T, undefined, R) || {T, R} <- lists:zip(Types, RV)]}.
 
-translate_reply(ReplyType, RV) ->
+translate_reply(ReplyType, Extra, RV) ->
     case RV of
         ok ->
             ok;
         {ok, Ok} ->
-            translate_ok_reply(ReplyType, Ok);
+            translate_ok_reply(ReplyType, Extra, Ok);
         {error, Error} ->
             {error, translate_error(Error)}
     end.

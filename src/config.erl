@@ -11,6 +11,9 @@
 -export([create/2, update/2, update/3, set/2, delete/1, delete/2]).
 -export([watch/0, watch/1, unwatch/1]).
 -export([reply/2, notify_watch/2]).
+-export([transaction/1]).
+-export([check_op/2, create_op/2, update_op/2, update_op/3]).
+-export([delete_op/1, delete_op/2]).
 -export([path_components/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          code_change/3, terminate/2]).
@@ -198,6 +201,27 @@ watch(Opts) ->
 unwatch(WatchRef) ->
     gen_server:call(?MODULE, {unwatch, WatchRef}, infinity).
 
+transaction(Operations) ->
+    gen_server:call(?MODULE, {transaction, Operations}, infinity).
+
+check_op(Path, Version) ->
+    {check, Path, Version}.
+
+create_op(Path, Data) ->
+    {create, Path, Data}.
+
+update_op(Path, Data) ->
+    {update, Path, Data}.
+
+update_op(Path, Data, Version) ->
+    {update, Path, Data, Version}.
+
+delete_op(Path) ->
+    {delete, Path}.
+
+delete_op(Path, Version) ->
+    {delete, Path, Version}.
+
 %% utility functions
 path_components(Path) ->
     ["/" | Components] = filename:split(Path),
@@ -243,6 +267,8 @@ handle_call({watch, Announce, PathPred}, {FromPid, _} = From,
 handle_call({unwatch, WatchRef}, From, #state{watches = Watches} = State) ->
     ets:delete(Watches, WatchRef),
     delegate_call(handle_unwatch, [WatchRef], From, State);
+handle_call({transaction, Operations}, From, State) ->
+    delegate_call(handle_transaction, [Operations], From, State);
 handle_call(Request, From, State) ->
     ?log_warning("Got unknown call ~p from ~p", [Request, From]),
     {reply, unknown_call, State}.
