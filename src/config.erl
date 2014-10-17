@@ -189,7 +189,7 @@ set(Path, Value) ->
     end.
 
 must_set(Path, Value) ->
-    {ok, _} = config:set(Path, Value).
+    {ok, _} = config:must_set(Path, Value).
 
 -spec delete(path()) -> ok | {error, error()}.
 delete(Path) ->

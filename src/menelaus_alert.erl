@@ -338,7 +338,7 @@ get_alert_config() ->
     X.
 
 set_alert_config(AlertConfig) ->
-    config:set("/email_alerts", AlertConfig).
+    config:must_set("/email_alerts", AlertConfig).
 
 common_params(Params) ->
     MinTStamp = case proplists:get_value("sinceTime", Params) of

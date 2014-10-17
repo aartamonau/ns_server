@@ -1586,7 +1586,7 @@ handle_settings_max_parallel_indexers_post(Req) ->
     V = proplists:get_value("globalValue", Params, ""),
     case parse_validate_number(V, 1, 1024) of
         {ok, Parsed} ->
-            config:set("/couchdb/max_parallel_indexers", Parsed),
+            config:must_set("/couchdb/max_parallel_indexers", Parsed),
             handle_settings_max_parallel_indexers(Req);
         Error ->
             reply_json(Req, {struct, [{'_', iolist_to_binary(io_lib:format("Invalid globalValue: ~p", [Error]))}]}, 400)
@@ -1637,7 +1637,7 @@ handle_settings_view_update_daemon_post(Req) ->
         [] ->
             {ok, CurrentProps} = config:get_value("/set_view_update_daemon"),
             MergedProps = misc:update_proplist(CurrentProps, Props),
-            config:set("/set_view_update_daemon", MergedProps),
+            config:must_set("/set_view_update_daemon", MergedProps),
             handle_settings_view_update_daemon(Req);
         _ ->
             reply_json(Req, {struct, Errors}, 400)
@@ -2020,7 +2020,7 @@ handle_settings_alerts_post(Req) ->
     ValidateOnly = proplists:get_value("just_validate", Req:parse_qs()) =:= "1",
     case {ValidateOnly, menelaus_alert:parse_settings_alerts_post(PostArgs)} of
         {false, {ok, Config}} ->
-            config:set("/email_alerts", Config),
+            config:must_set("/email_alerts", Config),
             reply(Req, 200);
         {false, {error, Errors}} ->
             reply_json(Req, {struct, [{errors, {struct, Errors}}]}, 400);
@@ -2952,7 +2952,7 @@ handle_internal_settings_post(Req) ->
                        case proplists:get_value(JK, CurrentValues) of
                            V -> undefined;
                            _ ->
-                               fun () -> config:set(CK, V) end
+                               fun () -> config:must_set(CK, V) end
                        end
                end,
     Actions = [case parse_validate_boolean_field("indexAwareRebalanceDisabled", [], Params) of
