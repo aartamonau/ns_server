@@ -9,6 +9,8 @@
 -export([get_node_value/2, get_node_value/3, get_node_value/4]).
 -export([dirty_get_node_value/2, dirty_get_node_value/3]).
 -export([create/2, update/2, update/3, set/2, delete/1, delete/2]).
+-export([must_create/2, must_update/2, must_update/3, must_set/2]).
+-export([must_delete/1, must_delete/2]).
 -export([watch/0, watch/1, unwatch/1]).
 -export([reply/2, notify_watch/2]).
 -export([transaction/1]).
@@ -147,15 +149,24 @@ get_snapshot() ->
 create(Path, Value) ->
     gen_server:call(?MODULE, {create, Path, Value}, infinity).
 
+must_create(Path, Value) ->
+    {ok, _} = config:create(Path, Value).
+
 -spec update(path(), value()) ->
                     {ok, version()} | {error, error()}.
 update(Path, Value) ->
     gen_server:call(?MODULE, {update, Path, Value}, infinity).
 
+must_update(Path, Value) ->
+    {ok, _} = config:update(Path, Value).
+
 -spec update(path(), value(), version()) ->
                     {ok, version()} | {error, error()}.
 update(Path, Value, Version) ->
     gen_server:call(?MODULE, {update, Path, Value, Version}, infinity).
+
+must_update(Path, Value, Version) ->
+    {ok, _} = config:update(Path, Value, Version).
 
 -spec set(path(), value()) -> {ok, version()} | {error, error()}.
 set(Path, Value) ->
@@ -177,13 +188,22 @@ set(Path, Value) ->
             RV
     end.
 
+must_set(Path, Value) ->
+    {ok, _} = config:set(Path, Value).
+
 -spec delete(path()) -> ok | {error, error()}.
 delete(Path) ->
     gen_server:call(?MODULE, {delete, Path}, infinity).
 
+must_delete(Path) ->
+    ok = config:delete(Path).
+
 -spec delete(path(), version()) -> ok | {error, error()}.
 delete(Path, Version) ->
     gen_server:call(?MODULE, {delete, Path, Version}, infinity).
+
+must_delete(Path, Version) ->
+    ok = config:delete(Path, Version).
 
 -spec watch() -> watch_ref().
 watch() ->
