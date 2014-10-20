@@ -138,15 +138,15 @@ handle_transaction(Operations, Tag, #state{connection = Conn} = State) ->
                   {check, Path, Version} ->
                       ezk:check_op(add_prefix(Path), Version);
                   {update, Path, Data} ->
-                      ezk:set_op(add_prefix(Path), Data);
+                      ezk:set_op(add_prefix(Path), term_to_binary(Data));
                   {update, Path, Data, Version} ->
-                      ezk:set_op(add_prefix(Path), Data, Version);
+                      ezk:set_op(add_prefix(Path), term_to_binary(Data), Version);
                   {delete, Path} ->
                       ezk:delete_op(add_prefix(Path));
                   {delete, Path, Version} ->
                       ezk:delete_op(add_prefix(Path), Version);
                   {create, Path, Data} ->
-                      ezk:create_op(add_prefix(Path), Data)
+                      ezk:create_op(add_prefix(Path), term_to_binary(Data))
               end || Op <- Operations],
 
     Types = [element(1, Op) || Op <- EzkOps],
