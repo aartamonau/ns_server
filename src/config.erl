@@ -8,8 +8,9 @@
 -export([dirty_get_value/1, dirty_get_value/2]).
 -export([get_node_value/2, get_node_value/3, get_node_value/4]).
 -export([dirty_get_node_value/2, dirty_get_node_value/3]).
--export([create/2, update/2, update/3, set/2, delete/1, delete/2]).
--export([must_create/2, must_update/2, must_update/3, must_set/2]).
+-export([create/2, update/2, update/3, delete/1, delete/2]).
+-export([set/1, set/2, must_set/1, must_set/2]).
+-export([must_create/2, must_update/2, must_update/3]).
 -export([must_delete/1, must_delete/2]).
 -export([watch/0, watch/1, unwatch/1]).
 -export([reply/2, notify_watch/2]).
@@ -190,6 +191,65 @@ set(Path, Value) ->
 
 must_set(Path, Value) ->
     {ok, _} = config:must_set(Path, Value).
+
+set(KVs) ->
+    ExtKVs = [{K, V,
+               case config:get(K) of
+                   {ok, _} ->
+                       true;
+                   {error, no_node} ->
+                       false
+               end} || {K, V} <- KVs],
+    try
+        do_multi_set(ExtKVs)
+    catch
+        throw:retry ->
+            set(KVs)
+    end.
+
+do_multi_set(KVs) ->
+    Txn = [case Exists of
+               true ->
+                   config:update_op(Key, Value);
+               false ->
+                   config:create_op(Key, Value)
+           end || {Key, Value, Exists} <- KVs],
+
+    case config:transaction(Txn) of
+        {ok, Results} ->
+            Retry =
+                lists:any(
+                  fun ({ok, _}) ->
+                          false;
+                      ({error, Type}) ->
+                          case Type of
+                              rolled_back ->
+                                  true;
+                              runtime_inconsistency ->
+                                  true;
+                              node_exists ->
+                                  true;
+                              no_node ->
+                                  true;
+                              _ ->
+                                  false
+                          end
+                  end, Results),
+
+            case Retry of
+                true ->
+                    throw(retry);
+                false ->
+                    {ok, Results}
+            end;
+        {error, _} = Error ->
+            Error
+    end.
+
+must_set(KVs) ->
+    {ok, Results} = set(KVs),
+    [] = [R || {error, _} = R <- Results],
+    ok.
 
 -spec delete(path()) -> ok | {error, error()}.
 delete(Path) ->
