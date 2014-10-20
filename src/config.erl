@@ -190,7 +190,7 @@ set(Path, Value) ->
     end.
 
 must_set(Path, Value) ->
-    {ok, _} = config:must_set(Path, Value).
+    {ok, _} = config:set(Path, Value).
 
 set(KVs) ->
     ExtKVs = [{K, V,
