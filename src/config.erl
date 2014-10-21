@@ -12,6 +12,7 @@
 -export([set/1, set/2, must_set/1, must_set/2]).
 -export([must_create/2, must_update/2, must_update/3]).
 -export([must_delete/1, must_delete/2]).
+-export([map_into/2]).
 -export([watch/0, watch/1, unwatch/1]).
 -export([reply/2, notify_watch/2]).
 -export([transaction/1]).
@@ -301,6 +302,36 @@ delete_op(Path) ->
 
 delete_op(Path, Version) ->
     {delete, Path, Version}.
+
+map_into(Paths, Fun) ->
+    Config = config:get_snapshot(),
+    Txn = lists:flatmap(
+            fun (Path) ->
+                    case config:get(Config, Path) of
+                        {ok, {Value, Version}} ->
+                            [config:update_op(Path, Fun(Value), Version)];
+                        {error, no_node} ->
+                            []
+                    end
+            end, Paths),
+
+    {ok, Results} = config:transaction(Txn),
+
+    Retry = lists:any(
+              fun ({ok, _}) ->
+                      false;
+                  ({error, Type}) when Type =:= bad_version;
+                                       Type =:= runtime_inconsistency;
+                                       Type =:= rolled_back ->
+                      true
+              end, Results),
+
+    case Retry of
+        true ->
+            config:map_into(Paths, Fun);
+        false ->
+            ok
+    end.
 
 %% utility functions
 path_components(Path) ->
