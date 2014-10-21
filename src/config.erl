@@ -309,7 +309,7 @@ map_into(Paths, Fun) ->
             fun (Path) ->
                     case config:get(Config, Path) of
                         {ok, {Value, Version}} ->
-                            [config:update_op(Path, Fun(Value), Version)];
+                            [config:update_op(Path, Fun(Path, Value), Version)];
                         {error, no_node} ->
                             []
                     end
