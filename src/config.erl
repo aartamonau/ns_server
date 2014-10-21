@@ -16,7 +16,7 @@
 -export([watch/0, watch/1, unwatch/1]).
 -export([reply/2, notify_watch/2]).
 -export([transaction/1]).
--export([check_op/2, create_op/2, update_op/2, update_op/3]).
+-export([exists_op/2, create_op/2, update_op/2, update_op/3]).
 -export([delete_op/1, delete_op/2]).
 -export([path_components/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -285,8 +285,8 @@ unwatch(WatchRef) ->
 transaction(Operations) ->
     gen_server:call(?MODULE, {transaction, Operations}, infinity).
 
-check_op(Path, Version) ->
-    {check, Path, Version}.
+exists_op(Path, Version) ->
+    {exists, Path, Version}.
 
 create_op(Path, Data) ->
     {create, Path, Data}.

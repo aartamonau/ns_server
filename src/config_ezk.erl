@@ -135,7 +135,7 @@ handle_unwatch(WatchRef, _Tag, #state{watches = Watches,
 
 handle_transaction(Operations, Tag, #state{connection = Conn} = State) ->
     EzkOps = [case Op of
-                  {check, Path, Version} ->
+                  {exists, Path, Version} ->
                       ezk:check_op(add_prefix(Path), Version);
                   {update, Path, Data} ->
                       ezk:set_op(add_prefix(Path), term_to_binary(Data));
