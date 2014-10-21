@@ -134,20 +134,25 @@ handle_unwatch(WatchRef, _Tag, #state{watches = Watches,
     {reply, ok, State}.
 
 handle_transaction(Operations, Tag, #state{connection = Conn} = State) ->
-    EzkOps = [case Op of
-                  {exists, Path, Version} ->
-                      ezk:check_op(add_prefix(Path), Version);
-                  {update, Path, Data} ->
-                      ezk:set_op(add_prefix(Path), term_to_binary(Data));
-                  {update, Path, Data, Version} ->
-                      ezk:set_op(add_prefix(Path), term_to_binary(Data), Version);
-                  {delete, Path} ->
-                      ezk:delete_op(add_prefix(Path));
-                  {delete, Path, Version} ->
-                      ezk:delete_op(add_prefix(Path), Version);
-                  {create, Path, Data} ->
-                      ezk:create_op(add_prefix(Path), term_to_binary(Data))
-              end || Op <- Operations],
+    EzkOps =
+        lists:flatten(
+          [case Op of
+               {exists, Path, Version} ->
+                   [ezk:check_op(add_prefix(Path), Version)];
+               {missing, Path} ->
+                   [ezk:create_op(add_prefix(Path), <<>>),
+                    ezk:delete_op(add_prefix(Path))];
+               {update, Path, Data} ->
+                   [ezk:set_op(add_prefix(Path), term_to_binary(Data))];
+               {update, Path, Data, Version} ->
+                   [ezk:set_op(add_prefix(Path), term_to_binary(Data), Version)];
+               {delete, Path} ->
+                   [ezk:delete_op(add_prefix(Path))];
+               {delete, Path, Version} ->
+                   [ezk:delete_op(add_prefix(Path), Version)];
+               {create, Path, Data} ->
+                   [ezk:create_op(add_prefix(Path), term_to_binary(Data))]
+           end || Op <- Operations]),
 
     Types = [element(1, Op) || Op <- EzkOps],
     ezk:n_transaction(Conn, EzkOps, self(), {reply, transaction, Tag, Types}),
