@@ -15,7 +15,7 @@
 %%
 -module(menelaus_event).
 
--behaviour(gen_event).
+-behaviour(gen_server).
 
 % Allows menelaus erlang processes (especially long-running HTTP /
 % REST streaming processes) to register for messages when there
@@ -28,63 +28,98 @@
 
 %% gen_event callbacks
 
--export([init/1, handle_event/2, handle_call/2,
+-export([init/1, handle_call/3, handle_cast/2,
          handle_info/2, terminate/2, code_change/3]).
 
 -record(state, {webconfig, watchers = []}).
 
--include_lib("eunit/include/eunit.hrl").
 -include("ns_common.hrl").
 
 % Noop process to get initialized in the supervision tree.
 
 start_link() ->
-    misc:start_event_link(fun () ->
-                                  gen_event:add_sup_handler(ns_config_events,
-                                                            {?MODULE, ns_config_events},
-                                                            ns_config_events),
-                                  gen_event:add_sup_handler(ns_node_disco_events,
-                                                            {?MODULE, ns_node_disco_events},
-                                                            simple_events_handler),
-                                  gen_event:add_sup_handler(buckets_events,
-                                                            {?MODULE, buckets_events},
-                                                            simple_events_handler)
-                          end).
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 register_watcher(Pid) ->
-    gen_event:call(ns_config_events,
-                   {?MODULE, ns_config_events},
-                   {register_watcher, Pid}),
-    gen_event:call(ns_node_disco_events,
-                   {?MODULE, ns_node_disco_events},
-                   {register_watcher, Pid}),
-    gen_event:call(buckets_events,
-                   {?MODULE, buckets_events},
-                   {register_watcher, Pid}).
+    gen_server:call(?MODULE, {register_watcher, Pid}).
 
 unregister_watcher(Pid) ->
-    gen_event:call(ns_config_events,
-                   {?MODULE, ns_config_events},
-                   {unregister_watcher, Pid}),
-    gen_event:call(ns_node_disco_events,
-                   {?MODULE, ns_node_disco_events},
-                   {unregister_watcher, Pid}),
-    gen_event:call(buckets_events,
-                   {?MODULE, buckets_events},
-                   {unregister_watcher, Pid}).
+    gen_server:call(?MODULE, {unregister_watcher, Pid}).
 
 %% Implementation
 
-init(ns_config_events) ->
-    {ok, #state{watchers = [],
-                webconfig = menelaus_web:webconfig()}};
-
 init(_) ->
-    {ok, #state{watchers = []}}.
+    Self = self(),
+    MsgFun = fun (Event) -> Self ! {event, Event} end,
+
+    ns_pubsub:subscribe_link(ns_config_events, MsgFun),
+    ns_pubsub:subscribe_link(ns_node_disco_events, MsgFun),
+    ns_pubsub:subscribe_link(buckets_events, MsgFun),
+
+    {ok, #state{watchers = [],
+                webconfig = menelaus_web:webconfig()}}.
 
 terminate(_Reason, _State)     -> ok.
 code_change(_OldVsn, State, _) -> {ok, State}.
 
+handle_call({register_watcher, Pid}, _From,
+            #state{watchers = Watchers} = State) ->
+    Watchers2 = case lists:keysearch(Pid, 1, Watchers) of
+                    false -> MonitorRef = erlang:monitor(process, Pid),
+                             [{Pid, MonitorRef} | Watchers];
+                    _     -> Watchers
+                end,
+    {reply, ok, State#state{watchers = Watchers2}};
+
+handle_call({unregister_watcher, Pid}, _From,
+            #state{watchers = Watchers} = State) ->
+    Watchers2 = case lists:keytake(Pid, 1, Watchers) of
+                    false -> Watchers;
+                    {value, {Pid, MonitorRef}, WatchersRest} ->
+                        erlang:demonitor(MonitorRef, [flush]),
+                        WatchersRest
+                end,
+    {reply, ok, State#state{watchers = Watchers2}};
+
+handle_call(Request, From, State) ->
+    ?log_warning("Unexpected handle_call(~p, ~p, ~p)", [Request, From, State]),
+    {reply, unhandled, State}.
+
+handle_cast(Msg, State) ->
+    ?log_warning("Unexpected handle_cast(~p, ~p)", [Msg, State]),
+    {noreply, State}.
+
+handle_info({event, {{node, Node, rest}, _}}, State) when Node =:= node() ->
+    NewState = maybe_restart(State),
+    {noreply, NewState};
+
+handle_info({event, {rest, _}}, State) ->
+    NewState = maybe_restart(State),
+    {noreply, NewState};
+
+handle_info({event, Event}, State) ->
+    case is_interesting_to_watchers(Event) of
+        true ->
+            ok = notify_watchers(State);
+        _ ->
+            ok
+    end,
+    {noreply, State};
+
+handle_info({'DOWN', MonitorRef, _, _, _},
+            #state{watchers = Watchers} = State) ->
+    Watchers2 = case lists:keytake(MonitorRef, 2, Watchers) of
+                    false -> Watchers;
+                    {value, {_Pid, MonitorRef}, WatchersRest} ->
+                        erlang:demonitor(MonitorRef, [flush]),
+                        WatchersRest
+                end,
+    {noreply, State#state{watchers = Watchers2}};
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+% ------------------------------------------------------------
 is_interesting_to_watchers({significant_buckets_change, _}) -> true;
 is_interesting_to_watchers({memcached, _}) -> true;
 is_interesting_to_watchers({{node, _, memcached}, _}) -> true;
@@ -98,61 +133,6 @@ is_interesting_to_watchers({autocompaction, _}) -> true;
 is_interesting_to_watchers({cluster_compat_version, _}) -> true;
 is_interesting_to_watchers({internal_visual_settings, _}) -> true;
 is_interesting_to_watchers(_) -> false.
-
-handle_event({{node, Node, rest}, _}, State) when Node =:= node() ->
-    NewState = maybe_restart(State),
-    {ok, NewState};
-
-handle_event({rest, _}, State) ->
-    NewState = maybe_restart(State),
-    {ok, NewState};
-
-handle_event(Event, State) ->
-    case is_interesting_to_watchers(Event) of
-        true ->
-            ok = notify_watchers(State);
-        _ ->
-            ok
-    end,
-    {ok, State}.
-
-handle_call({register_watcher, Pid},
-            #state{watchers = Watchers} = State) ->
-    Watchers2 = case lists:keysearch(Pid, 1, Watchers) of
-                    false -> MonitorRef = erlang:monitor(process, Pid),
-                             [{Pid, MonitorRef} | Watchers];
-                    _     -> Watchers
-                end,
-    {ok, ok, State#state{watchers = Watchers2}};
-
-handle_call({unregister_watcher, Pid},
-            #state{watchers = Watchers} = State) ->
-    Watchers2 = case lists:keytake(Pid, 1, Watchers) of
-                    false -> Watchers;
-                    {value, {Pid, MonitorRef}, WatchersRest} ->
-                        erlang:demonitor(MonitorRef, [flush]),
-                        WatchersRest
-                end,
-    {ok, ok, State#state{watchers = Watchers2}};
-
-handle_call(Request, State) ->
-    ?log_warning("Unexpected handle_call(~p, ~p)", [Request, State]),
-    {ok, ok, State}.
-
-handle_info({'DOWN', MonitorRef, _, _, _},
-            #state{watchers = Watchers} = State) ->
-    Watchers2 = case lists:keytake(MonitorRef, 2, Watchers) of
-                    false -> Watchers;
-                    {value, {_Pid, MonitorRef}, WatchersRest} ->
-                        erlang:demonitor(MonitorRef, [flush]),
-                        WatchersRest
-                end,
-    {ok, State#state{watchers = Watchers2}};
-
-handle_info(_Info, State) ->
-    {ok, State}.
-
-% ------------------------------------------------------------
 
 notify_watchers(#state{watchers = Watchers}) ->
     lists:foreach(fun({Pid, _}) ->
