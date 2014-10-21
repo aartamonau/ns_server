@@ -303,7 +303,7 @@ delete_op(Path) ->
 delete_op(Path, Version) ->
     {delete, Path, Version}.
 
-map_into(Paths, Fun) ->
+map_into(Fun, Paths) ->
     Config = config:get_snapshot(),
     Txn = lists:flatmap(
             fun (Path) ->
