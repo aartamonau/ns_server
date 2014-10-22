@@ -492,9 +492,9 @@ handle_info({'EXIT', Pid, Reason}, rebalancing,
                               "You can try rebalance again.">>}
              end,
 
-    ns_config:set([{rebalance_status, Status},
-                   {rebalance_status_uuid, couch_uuids:random()},
-                   {rebalancer_pid, undefined}]),
+    config:set([{"/rebalance_status", Status},
+                {"/rebalance_status_uuid", couch_uuids:random()},
+                {"/rebalancer_pid", undefined}]),
     rpc:eval_everywhere(diag_handler, log_all_tap_and_checkpoint_stats, []),
     case (lists:member(node(), EjectNodes) andalso Reason =:= normal) orelse
         lists:member(node(), FailedNodes) of
@@ -535,9 +535,9 @@ handle_info({'EXIT', Pid, Reason}, upgrading_to_dcp,
                      {none, <<"DCP upgrade failed. See logs for detailed reason.">>}
              end,
 
-    ns_config:set([{rebalance_status, Status},
-                   {rebalance_status_uuid, couch_uuids:random()},
-                   {rebalancer_pid, undefined}]),
+    config:set([{"/rebalance_status", Status},
+                {"/rebalance_status_uuid", couch_uuids:random()},
+                {"/rebalancer_pid", undefined}]),
 
     case Restart of
         true ->
@@ -677,10 +677,10 @@ idle({start_graceful_failover, Node}, _From,
     case ns_rebalancer:start_link_graceful_failover(Node) of
         {ok, Pid} ->
             notify_janitor_finished(RemainingBuckets, rebalance_running),
-            ns_config:set([{rebalance_status, running},
-                           {rebalance_status_uuid, couch_uuids:random()},
-                           {graceful_failover_pid, Pid},
-                           {rebalancer_pid, Pid}]),
+            config:set([{"/rebalance_status", running},
+                        {"/rebalance_status_uuid", couch_uuids:random()},
+                        {"/graceful_failover_pid", Pid},
+                        {"/rebalancer_pid", Pid}]),
             {reply, ok, rebalancing,
              #rebalancing_state{rebalancer=Pid,
                                 eject_nodes = [],
@@ -714,10 +714,10 @@ idle({start_rebalance, KeepNodes, EjectNodes,
 
             notify_janitor_finished(RemainingBuckets, rebalance_running),
             ns_cluster:counter_inc(rebalance_start),
-            ns_config:set([{rebalance_status, running},
-                           {rebalance_status_uuid, couch_uuids:random()},
-                           {graceful_failover_pid, undefined},
-                           {rebalancer_pid, Pid}]),
+            config:set([{"/rebalance_status", running},
+                        {"/rebalance_status_uuid", couch_uuids:random()},
+                        {"/graceful_failover_pid", undefined},
+                        {"/rebalancer_pid", Pid}]),
 
             {reply, ok, rebalancing,
              #rebalancing_state{rebalancer=Pid,
@@ -741,10 +741,10 @@ idle({move_vbuckets, Bucket, Moves}, _From, #idle_state{remaining_buckets = Rema
                     ns_rebalancer:run_mover(Bucket, Config, proplists:get_value(servers, Config),
                                             0, 1, Map, NewMap)
             end),
-    ns_config:set([{rebalance_status, running},
-                   {rebalance_status_uuid, couch_uuids:random()},
-                   {graceful_failover_pid, undefined},
-                   {rebalancer_pid, Pid}]),
+    config:set([{"/rebalance_status", running},
+                {"/rebalance_status_uuid", couch_uuids:random()},
+                {"/graceful_failover_pid", undefined},
+                {"/rebalancer_pid", Pid}]),
     {reply, ok, rebalancing,
      #rebalancing_state{rebalancer=Pid,
                         progress=dict:new()}};
@@ -1135,7 +1135,7 @@ wait_for_nodes(Nodes, Pred, Timeout) ->
 %% quickly and _without_ communication to potentially remote
 %% ns_orchestrator find out if rebalance is running.
 is_rebalance_running() ->
-    ns_config:search(rebalance_status) =:= {value, running}.
+    config:get_value("/rebalance_status") =:= {ok, running}.
 
 consider_switching_compat_mode() ->
     CurrentVersion = cluster_compat_mode:get_compat_version(),
@@ -1304,9 +1304,9 @@ maybe_start_upgrade_to_dcp(Restart, Type) ->
         {Buckets, nontrivial} ->
             {ok, Pid} = dcp_upgrade:start_link(Buckets),
 
-            ns_config:set([{rebalance_status, running},
-                           {rebalance_status_uuid, couch_uuids:random()},
-                           {rebalancer_pid, Pid}]),
+            config:set([{"/rebalance_status", running},
+                        {"/rebalance_status_uuid", couch_uuids:random()},
+                        {"/rebalancer_pid", Pid}]),
 
             {next_state, upgrading_to_dcp,
              #dcp_upgrade_state{upgrader = Pid,

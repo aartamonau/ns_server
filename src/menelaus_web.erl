@@ -2491,8 +2491,8 @@ handle_rebalance_progress(_PoolId, Req) ->
                       | [{atom_to_binary(Node, latin1),
                           {struct, [{progress, Progress}]}} || {Node, Progress} <- PerNode]];
                  _ ->
-                     case ns_config:search(rebalance_status) of
-                         {value, {none, ErrorMessage}} ->
+                     case config:get_value("/rebalance_status") of
+                         {ok, {none, ErrorMessage}} ->
                              [{status, <<"none">>},
                               {errorMessage, iolist_to_binary(ErrorMessage)}];
                          _ -> [{status, <<"none">>}]

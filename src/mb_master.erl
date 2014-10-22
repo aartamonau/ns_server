@@ -328,8 +328,8 @@ candidate({heartbeat, NodeInfo, master, _H}, #state{peers=Peers} = State) ->
                     false ->
                         State#state{last_heard=now(), master=Node};
                     true ->
-                        case ns_config:search(rebalance_status) of
-                            {value, running} ->
+                        case config:get_value("/rebalance_status") of
+                            {ok, running} ->
                                 ale:info(?USER_LOGGER,
                                          "Candidate got master heartbeat from "
                                          "node ~p which has lower priority. "
@@ -337,14 +337,22 @@ candidate({heartbeat, NodeInfo, master, _H}, #state{peers=Peers} = State) ->
                                          "rebalance seems to be running",
                                          [Node]),
                                 State#state{last_heard=now(), master=Node};
-                            _ ->
+                            {ok, _} ->
                                 ale:info(?USER_LOGGER,
                                          "Candidate got master heartbeat from "
                                          "node ~p which has lower priority. "
                                          "Will try to take over.", [Node]),
 
                                 send_heartbeat_with_peers([Node], master, State#state.peers),
-                                State#state{master=undefined}
+                                State#state{master=undefined};
+                            Other ->
+                                ale:info(?USER_LOGGER,
+                                         "Candidate got master heartbeat from "
+                                         "node ~p which has lower priority. "
+                                         "But I won't try to take over since "
+                                         "I couldn't obtain rebalance status: ~p",
+                                         [Node, Other]),
+                                State#state{last_heard=now(), master=Node}
                         end
                 end,
 

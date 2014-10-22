@@ -93,9 +93,12 @@ build_replacement_groups(Groups, ParsedGroups) ->
                end, ReplacementGroups0).
 
 finish_handle_server_groups_put(Req, ReplacementGroups, RawGroups) ->
+    %% TODO: this was inside transaction; put it back there when server_groups
+    %% get to new config
+    RebalancerPid = config:dirty_get_value("/rebalancer_pid", undefined),
+
     TXNRV = ns_config:run_txn(
               fun (Cfg, SetFn) ->
-                      RebalancerPid = ns_config:search(Cfg, rebalancer_pid, undefined),
                       case RebalancerPid of
                           undefined ->
                               {value, NowRawGroups} = ns_config:search(Cfg, server_groups),

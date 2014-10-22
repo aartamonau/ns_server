@@ -88,12 +88,12 @@ deactivate(Nodes) ->
                    || Node <- Nodes]).
 
 is_stop_rebalance_safe() ->
-    case ns_config:search(rebalancer_pid) of
-        false ->
+    case config:get_value("/rebalancer_pid") of
+        {error, no_node} ->
             true;
-        {value, undefined} ->
+        {ok, undefined} ->
             true;
-        {value, Pid} ->
+        {ok, Pid} ->
             PidNode = node(Pid),
             MasterNode = mb_master:master_node(),
             PidNode =:= MasterNode

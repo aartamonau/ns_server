@@ -59,6 +59,10 @@ init([]) ->
     self() ! acquire_initial_status,
     ns_pubsub:subscribe_link(ns_config_events,
                              fun handle_config_event/2, {undefined, undefined}),
+    config_pubsub:subscribe_link(
+      [{path_pred, fun (P) -> P =:= "/rebalance_status_uuid" end}],
+      fun handle_new_config_event/2, undefined),
+
     case misc:get_env_default(dont_log_stats, false) of
         false ->
             timer2:send_interval(?LOG_INTERVAL, log);
@@ -82,6 +86,14 @@ handle_recovery_status_change(not_running, not_running) ->
     {not_running, false};
 handle_recovery_status_change(New, undefined) ->
     {New, true}.
+
+handle_new_config_event({"/rebalance_status_uuid", {NewValue, _}}, RebalanceState) ->
+    case NewValue of
+        RebalanceState ->
+            ok;
+        _ ->
+            ns_doctor ! significant_change
+    end.
 
 handle_config_event({rebalance_status_uuid, NewValue}, {RebalanceState, RecoveryState}) ->
     case NewValue of
@@ -307,8 +319,7 @@ maybe_refresh_tasks_version(State) ->
                     end, Set, proplists:get_value(local_tasks, NodeInfo, []))
           end, sets:new(), Nodes),
     TasksRebalanceAndRecoveryHash = erlang:phash2({erlang:phash2(TasksHashesSet),
-                                                   ns_config:read_key_fast(rebalance_status_uuid,
-                                                                           undefined),
+                                                   config:dirty_get_value("/rebalance_status_uuid", undefined),
                                                    ns_orchestrator:is_recovery_running()}),
     case TasksRebalanceAndRecoveryHash =:= State#state.tasks_hash of
         true ->
@@ -683,8 +694,10 @@ do_build_tasks_list(NodesDict, NeedNodeP, PoolId, AllRepDocs, RebStatusTimeout) 
         case (catch ns_orchestrator:rebalance_progress_full(RebStatusTimeout)) of
             {running, PerNode} ->
                 DetailedProgress = get_detailed_progress(),
+                {ok, RebalancerPid} = config:get_value("/rebalancer_pid"),
+                {ok, GracefulFailoverPid} = config:get_value("/graceful_failover_pid"),
 
-                Subtype = case ns_config:search(rebalancer_pid) =:= ns_config:search(graceful_failover_pid) of
+                Subtype = case RebalancerPid =:= GracefulFailoverPid of
                               true ->
                                   gracefulFailover;
                               _ ->
@@ -711,8 +724,8 @@ do_build_tasks_list(NodesDict, NeedNodeP, PoolId, AllRepDocs, RebStatusTimeout) 
                  {status, notRunning},
                  {statusIsStale, FullProgress =/= not_running},
                  {masterRequestTimedOut, misc:is_timeout_exit(FullProgress)}
-                 | case ns_config:search(rebalance_status) of
-                       {value, {none, ErrorMessage}} ->
+                 | case config:get_value("/rebalance_status") of
+                       {ok, {none, ErrorMessage}} ->
                            [{errorMessage, iolist_to_binary(ErrorMessage)}];
                        _ -> []
                    end]
