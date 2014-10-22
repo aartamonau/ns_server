@@ -12,12 +12,12 @@
 -export([set/1, set/2, must_set/1, must_set/2]).
 -export([must_create/2, must_update/2, must_update/3]).
 -export([must_delete/1, must_delete/2]).
--export([map_into/2]).
 -export([watch/0, watch/1, unwatch/1]).
 -export([reply/2, notify_watch/2]).
 -export([multi/1]).
 -export([exists_op/2, missing_op/1, create_op/2, update_op/2, update_op/3]).
 -export([delete_op/1, delete_op/2]).
+-export([transaction/1]).
 -export([path_components/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          code_change/3, terminate/2]).
@@ -306,34 +306,113 @@ delete_op(Path) ->
 delete_op(Path, Version) ->
     {delete, Path, Version}.
 
-map_into(Fun, Paths) ->
+transaction(Fun) ->
+    GetTid = ets:new(ok, [set, protected]),
+    SetTid = ets:new(ok, [set, protected]),
+
+    RV = try do_transaction(Fun, GetTid, SetTid)
+         after
+             ets:delete(GetTid),
+             ets:delete(SetTid)
+         end,
+
+    case RV of
+        {abort, _} ->
+            RV;
+        {commit, BodyRV, Transaction} ->
+            {ok, Results} = config:multi(Transaction),
+
+            Retry = lists:any(
+                      fun (ok) ->
+                              false;
+                          ({ok, _}) ->
+                              false;
+                          ({error, Type}) when Type =:= bad_version;
+                                               Type =:= runtime_inconsistency;
+                                               Type =:= rolled_back;
+                                               Type =:= node_exists;
+                                               Type =:= no_node ->
+                              true
+                      end, Results),
+
+            case Retry of
+                true ->
+                    config:transaction(Fun);
+                false ->
+                    {ok, BodyRV}
+            end
+    end.
+
+do_transaction(Fun, GetTid, SetTid) ->
     Config = config:get_snapshot(),
-    Txn = lists:flatmap(
-            fun (Path) ->
-                    case config:get(Config, Path) of
-                        {ok, {Value, Version}} ->
-                            [config:update_op(Path, Fun(Path, Value), Version)];
-                        {error, no_node} ->
-                            []
-                    end
-            end, Paths),
 
-    {ok, Results} = config:multi(Txn),
+    Get = fun (Path) ->
+                  case ets:lookup(SetTid, Path) of
+                      [] ->
+                          case ets:lookup(GetTid, Path) of
+                              [] ->
+                                  {R, Version} =
+                                      case config:get(Config, Path) of
+                                          {ok, {Value, V}} ->
+                                              {{ok, Value}, V};
+                                          {error, no_node} ->
+                                              {{error, no_node}, -1}
+                                      end,
 
-    Retry = lists:any(
-              fun ({ok, _}) ->
-                      false;
-                  ({error, Type}) when Type =:= bad_version;
-                                       Type =:= runtime_inconsistency;
-                                       Type =:= rolled_back ->
-                      true
-              end, Results),
+                                  ets:insert(GetTid, {Path, R, Version}),
+                                  R;
+                              [{Path, R, _Version}] ->
+                                  R
+                          end;
+                      [{Path, Value, _OldVersion}] ->
+                          {ok, Value}
+                  end
+          end,
 
-    case Retry of
-        true ->
-            config:map_into(Paths, Fun);
-        false ->
-            ok
+    Set = fun (Path, NewValue) ->
+                  OldVersion =
+                      case ets:lookup(SetTid, Path) of
+                          [] ->
+                              case ets:lookup(GetTid, Path) of
+                                  [] ->
+                                      case config:get(Config, Path) of
+                                          {ok, {_, V}} ->
+                                              V;
+                                          {error, no_node} ->
+                                              -1
+                                      end;
+                                  [{Path, _, V}] ->
+                                      ets:delete(GetTid, Path),
+                                      V
+                              end;
+                          [{Path, _Value, V}] ->
+                              V
+                      end,
+
+                  ets:insert(SetTid, {Path, NewValue, OldVersion}),
+                  ok
+          end,
+
+    try Fun(Get, Set) of
+        RV ->
+            Transaction =
+                [case Version of
+                     -1 ->
+                         config:missing_op(Path);
+                     _ ->
+                         config:exists_op(Path, Version)
+                 end || {Path, _, Version} <- ets:tab2list(GetTid)] ++
+
+                [case Version of
+                     -1 ->
+                         config:create_op(Path, Value);
+                     _ ->
+                         config:update_op(Path, Value, Version)
+                 end || {Path, Value, Version} <- ets:tab2list(SetTid)],
+            {commit, RV, Transaction}
+    catch
+        throw:{abort, _} = Abort ->
+            Abort
     end.
 
 %% utility functions
