@@ -5,7 +5,7 @@
 -export([init/1, terminate/2]).
 -export([handle_get/3, handle_create/4, handle_update/4, handle_update/5,
          handle_delete/3, handle_delete/4, handle_watch/5, handle_unwatch/3,
-         handle_transaction/3]).
+         handle_multi/3]).
 -export([handle_msg/2]).
 
 -include_lib("ezk/include/ezk.hrl").
@@ -133,7 +133,7 @@ handle_unwatch(WatchRef, _Tag, #state{watches = Watches,
     ets:delete(WatchesPids, WatcherPid),
     {reply, ok, State}.
 
-handle_transaction(Operations, Tag, #state{connection = Conn} = State) ->
+handle_multi(Operations, Tag, #state{connection = Conn} = State) ->
     EzkOps =
         lists:flatten(
           [case Op of
@@ -155,7 +155,7 @@ handle_transaction(Operations, Tag, #state{connection = Conn} = State) ->
            end || Op <- Operations]),
 
     Types = [element(1, Op) || Op <- EzkOps],
-    ezk:n_transaction(Conn, EzkOps, self(), {reply, transaction, Tag, Types}),
+    ezk:n_transaction(Conn, EzkOps, self(), {reply, multi, Tag, Types}),
     {noreply, State}.
 
 handle_msg({{synced, Path, Tag}, RV}, #state{connection = Conn} = State) ->
@@ -202,7 +202,7 @@ translate_ok_reply(create, _, _Path) ->
     {ok, 0};
 translate_ok_reply(set, _, #ezk_stat{dataversion = Version}) ->
     {ok, Version};
-translate_ok_reply(transaction, Types, RV) ->
+translate_ok_reply(multi, Types, RV) ->
     {ok, [translate_reply(T, undefined, R) || {T, R} <- lists:zip(Types, RV)]}.
 
 translate_reply(ReplyType, Extra, RV) ->

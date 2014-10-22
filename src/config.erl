@@ -15,7 +15,7 @@
 -export([map_into/2]).
 -export([watch/0, watch/1, unwatch/1]).
 -export([reply/2, notify_watch/2]).
--export([transaction/1]).
+-export([multi/1]).
 -export([exists_op/2, missing_op/1, create_op/2, update_op/2, update_op/3]).
 -export([delete_op/1, delete_op/2]).
 -export([path_components/1]).
@@ -216,7 +216,7 @@ do_multi_set(KVs) ->
                    config:create_op(Key, Value)
            end || {Key, Value, Exists} <- KVs],
 
-    case config:transaction(Txn) of
+    case config:multi(Txn) of
         {ok, Results} ->
             Retry =
                 lists:any(
@@ -282,8 +282,8 @@ watch(Opts) ->
 unwatch(WatchRef) ->
     gen_server:call(?MODULE, {unwatch, WatchRef}, infinity).
 
-transaction(Operations) ->
-    gen_server:call(?MODULE, {transaction, Operations}, infinity).
+multi(Operations) ->
+    gen_server:call(?MODULE, {multi, Operations}, infinity).
 
 exists_op(Path, Version) ->
     {exists, Path, Version}.
@@ -318,7 +318,7 @@ map_into(Fun, Paths) ->
                     end
             end, Paths),
 
-    {ok, Results} = config:transaction(Txn),
+    {ok, Results} = config:multi(Txn),
 
     Retry = lists:any(
               fun ({ok, _}) ->
@@ -381,8 +381,8 @@ handle_call({watch, Announce, PathPred}, {FromPid, _} = From,
 handle_call({unwatch, WatchRef}, From, #state{watches = Watches} = State) ->
     ets:delete(Watches, WatchRef),
     delegate_call(handle_unwatch, [WatchRef], From, State);
-handle_call({transaction, Operations}, From, State) ->
-    delegate_call(handle_transaction, [Operations], From, State);
+handle_call({multi, Operations}, From, State) ->
+    delegate_call(handle_multi, [Operations], From, State);
 handle_call(Request, From, State) ->
     ?log_warning("Got unknown call ~p from ~p", [Request, From]),
     {reply, unknown_call, State}.
